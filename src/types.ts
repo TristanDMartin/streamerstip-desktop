@@ -18,6 +18,40 @@ export interface MediaAsset {
   waveform: number[];
   probe: ProbeInfo | null;
   importedAt: string;
+  scenes: SceneSpan[];
+  silences: SilenceSpan[];
+}
+
+export interface SceneSpan {
+  startMs: number;
+  endMs: number;
+  thumbnailPath: string | null;
+}
+
+export interface SilenceSpan {
+  startMs: number;
+  endMs: number;
+}
+
+export interface TranscriptWord {
+  startMs: number;
+  endMs: number;
+  text: string;
+}
+
+export interface TranscriptSegment {
+  segmentId: string;
+  startMs: number;
+  endMs: number;
+  text: string;
+  speaker: string | null;
+  profanity: boolean;
+  words?: TranscriptWord[];
+}
+
+export interface Transcript {
+  mediaId: string;
+  segments: TranscriptSegment[];
 }
 
 export interface SequenceClip {
@@ -98,7 +132,7 @@ export interface Project {
   updatedAt: string;
   media: MediaAsset[];
   sequences: Sequence[];
-  transcript: Record<string, unknown>;
+  transcript: Transcript;
   moments: unknown[];
   jobs: Job[];
   actions: ActionRecord[];
@@ -171,7 +205,16 @@ export interface TippyEvent {
   message: string;
 }
 
+export interface TippyHit {
+  segmentId: string;
+  startMs: number;
+  endMs: number;
+  text: string;
+}
+
 export interface TippyReply {
   connected: boolean;
+  handled: boolean;
   message: string;
+  hits: TippyHit[];
 }

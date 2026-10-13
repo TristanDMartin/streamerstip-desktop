@@ -1,5 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Waveform } from "../components/Waveform";
 import {
@@ -11,13 +11,16 @@ import {
   phaseLabel,
   privacyLabel,
 } from "../lib/format";
-import type { Job, MediaAsset, Project } from "../types";
+import type { Job, MediaAsset, Project, TranscriptSegment } from "../types";
 
 interface ProjectViewProps {
   project: Project;
   engineReady: boolean;
   engineMessage: string;
   previewOrigin: string;
+  seekToken: number;
+  seekMs: number | null;
+  onSeek: (ms: number) => void;
   onImport: () => Promise<void>;
   onExport: (mediaId: string) => Promise<void>;
 }
@@ -27,6 +30,9 @@ export function ProjectView({
   engineReady,
   engineMessage,
   previewOrigin,
+  seekToken,
+  seekMs,
+  onSeek,
   onImport,
   onExport,
 }: ProjectViewProps) {
@@ -108,6 +114,15 @@ export function ProjectView({
             media={media}
             playhead={playhead}
             previewOrigin={previewOrigin}
+            seekToken={seekToken}
+            seekMs={seekMs}
+            segments={project.transcript.segments}
+            transcriptError={
+              project.jobs.find(
+                (job) => job.type === "transcribe_media" && job.state === "failed",
+              )?.error ?? null
+            }
+            onSeek={onSeek}
             onPlayhead={setPlayhead}
           />
         ) : (
@@ -135,13 +150,31 @@ function MediaStage({
   media,
   playhead,
   previewOrigin,
+  seekToken,
+  seekMs,
+  segments,
+  transcriptError,
+  onSeek,
   onPlayhead,
 }: {
   media: MediaAsset;
   playhead: number;
   previewOrigin: string;
+  seekToken: number;
+  seekMs: number | null;
+  segments: TranscriptSegment[];
+  transcriptError: string | null;
+  onSeek: (ms: number) => void;
   onPlayhead: (value: number) => void;
 }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [query, setQuery] = useState("");
+  useEffect(() => {
+    if (seekMs == null || !videoRef.current) {
+      return;
+    }
+    videoRef.current.currentTime = seekMs / 1000;
+  }, [seekMs, seekToken]);
   const preview = media.proxyPath
     ? `${previewOrigin}/v/${encodeURIComponent(media.proxyPath)}`
     : "";
@@ -153,6 +186,7 @@ function MediaStage({
       <div className="preview-frame">
         {preview && previewOrigin ? (
           <video
+            ref={videoRef}
             key={preview}
             data-testid="preview"
             src={preview}
@@ -218,12 +252,113 @@ function MediaStage({
           <p className="empty">Waveform appears after the audio pass.</p>
         )}
       </div>
+      <Analysis
+        media={media}
+        segments={segments}
+        query={query}
+        transcriptError={transcriptError}
+        onQuery={setQuery}
+        onSeek={onSeek}
+      />
     </div>
   );
 }
 
+function Analysis({
+  media,
+  segments,
+  query,
+  transcriptError,
+  onQuery,
+  onSeek,
+}: {
+  media: MediaAsset;
+  segments: TranscriptSegment[];
+  query: string;
+  transcriptError: string | null;
+  onQuery: (value: string) => void;
+  onSeek: (ms: number) => void;
+}) {
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? segments.filter((segment) => segment.text.toLowerCase().includes(needle))
+    : segments;
+  return (
+    <>
+      {media.scenes.length > 0 ? (
+        <div className="scene-row" data-testid="scenes">
+          {media.scenes.map((scene) => (
+            <button
+              key={`${scene.startMs}-${scene.endMs}`}
+              type="button"
+              className="scene-card"
+              onClick={() => onSeek(scene.startMs)}
+            >
+              {scene.thumbnailPath ? (
+                <img src={convertFileSrc(scene.thumbnailPath)} alt="" />
+              ) : null}
+              <span>{formatDuration(scene.startMs)}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {media.silences.length > 0 ? (
+        <p className="silence-line" data-testid="silences">
+          Silence{" "}
+          {media.silences
+            .map((span) => `${formatDuration(span.startMs)}–${formatDuration(span.endMs)}`)
+            .join(", ")}
+        </p>
+      ) : null}
+      <div className="transcript" data-testid="transcript">
+        <div className="waveform-label">
+          <span>Transcript</span>
+          <span>{shown.length}</span>
+        </div>
+        <input
+          type="text"
+          value={query}
+          placeholder="Search the transcript"
+          aria-label="Search the transcript"
+          data-testid="transcript-search"
+          onChange={(event) => onQuery(event.target.value)}
+        />
+        {transcriptError ? <p className="empty">{transcriptError}</p> : null}
+        {shown.length > 0 ? (
+          <ul className="transcript-list">
+            {shown.map((segment) => (
+              <li key={segment.segmentId}>
+                <button type="button" onClick={() => onSeek(segment.startMs)}>
+                  <time>{formatDuration(segment.startMs)}</time>
+                  <span>{segment.text}</span>
+                  {segment.profanity ? <em>Flagged</em> : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="empty">
+            {segments.length === 0
+              ? "The transcript appears after the local speech pass."
+              : "No transcript lines match that search."}
+          </p>
+        )}
+      </div>
+    </>
+  );
+}
+
 function Pipeline({ jobs }: { jobs: Job[] }) {
-  const ordered = ["probe_media", "create_proxy", "extract_audio", "create_thumbnail", "create_export"];
+  const ordered = [
+    "probe_media",
+    "create_proxy",
+    "extract_audio",
+    "create_thumbnail",
+    "detect_scenes",
+    "detect_silence",
+    "transcribe_media",
+    "create_export",
+  ];
   const shown = ordered
     .map((type) => jobs.find((job) => job.type === type))
     .filter((job): job is Job => Boolean(job));

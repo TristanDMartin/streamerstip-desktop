@@ -21,6 +21,7 @@ use crate::runtime::{
     derived_dir, record_action, record_version, refresh_dependency_states, BusEvent, CostEntry,
     CostMeter, Orchestrator, TaskNode,
 };
+use crate::speech::SpeechEngine;
 
 pub struct AppState {
     pub store: Mutex<ProjectStore>,
@@ -31,10 +32,15 @@ pub struct AppState {
     pub log_path: PathBuf,
     pub cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
     pub preview_origin: String,
+    pub speech: Box<dyn SpeechEngine>,
 }
 
 impl AppState {
-    pub fn open(root: PathBuf, engine: Box<dyn MediaEngine>) -> DesktopResult<Self> {
+    pub fn open(
+        root: PathBuf,
+        engine: Box<dyn MediaEngine>,
+        speech: Box<dyn SpeechEngine>,
+    ) -> DesktopResult<Self> {
         std::fs::create_dir_all(&root)?;
         let store = ProjectStore::new(root.clone())?;
         let account = account::load_or_create(&root.join("account.json"))?;
@@ -61,6 +67,7 @@ impl AppState {
         );
         let _ = crate::runtime::plan_goal("not connected");
         let _ = flags.desktop_multi_agent;
+        log_line(&log_path, "info", &speech.status());
         Ok(Self {
             store: Mutex::new(store),
             engine,
@@ -70,6 +77,7 @@ impl AppState {
             log_path,
             cancels: Mutex::new(HashMap::new()),
             preview_origin: String::new(),
+            speech,
         })
     }
 
@@ -202,6 +210,8 @@ pub fn import_video(state: &AppState, project_id: &str, source: &Path) -> Deskto
         waveform: Vec::new(),
         probe: None,
         imported_at: now_iso(),
+        scenes: Vec::new(),
+        silences: Vec::new(),
     });
     project.sequences.push(Sequence {
         sequence_id: new_id("seq"),
@@ -239,6 +249,47 @@ pub fn export_video(state: &AppState, project_id: &str, media_id: &str) -> Deskt
     Orchestrator.enqueue(&mut project, media_id, &crate::runtime::plan_export());
     store.save_project(&project, true)?;
     Ok(project)
+}
+
+pub fn ask_tippy(state: &AppState, project_id: Option<&str>, text: &str) -> crate::ai::TippyReply {
+    log_line(
+        &state.log_path,
+        "info",
+        "tippy composer submitted; no model was called",
+    );
+    if let Some(project_id) = project_id {
+        if let Ok(project) = lock(&state.store).load_project(project_id) {
+            if let Some((message, hits)) =
+                crate::speech::answer_question(&project.transcript.segments, text)
+            {
+                log_line(
+                    &state.log_path,
+                    "info",
+                    "answered from the local transcript",
+                );
+                return crate::ai::TippyReply {
+                    connected: false,
+                    handled: true,
+                    message,
+                    hits: hits
+                        .into_iter()
+                        .map(|hit| crate::ai::TippyHit {
+                            segment_id: hit.segment_id,
+                            start_ms: hit.start_ms,
+                            end_ms: hit.end_ms,
+                            text: hit.text,
+                        })
+                        .collect(),
+                };
+            }
+        }
+    }
+    let reply = crate::ai::submit_tippy_message(text);
+    crate::ai::TippyReply {
+        handled: false,
+        hits: Vec::new(),
+        ..reply
+    }
 }
 
 pub fn cancel_job(state: &AppState, project_id: &str, job_id: &str) -> DesktopResult<Project> {
@@ -436,6 +487,50 @@ fn execute(
             report(1.0);
             Ok(Execution::Thumbnail(output))
         }
+        "detect_scenes" => {
+            let scenes = state
+                .engine
+                .detect_scenes(&claimed.input, claimed.duration_ms)
+                .map_err(|err| err.to_string())?;
+            let mut stored = Vec::new();
+            for (index, mut scene) in scenes.into_iter().take(8).enumerate() {
+                let output = folder.join(format!("scene-{index}.png"));
+                if state
+                    .engine
+                    .create_thumbnail(&claimed.input, &output, scene.start_ms)
+                    .is_ok()
+                {
+                    scene.thumbnail_path = Some(output.display().to_string());
+                }
+                stored.push(scene);
+                report((index as f64 + 1.0) / 8.0);
+            }
+            Ok(Execution::Scenes(stored))
+        }
+        "detect_silence" => {
+            let audio = stored_path(state, project_id, &claimed.media_id, true)?;
+            let silences = state
+                .engine
+                .detect_silence(&audio, claimed.duration_ms)
+                .map_err(|err| err.to_string())?;
+            report(1.0);
+            Ok(Execution::Silences(silences))
+        }
+        "transcribe_media" => {
+            let speech_wav = folder.join("speech.wav");
+            state
+                .engine
+                .extract_speech(&claimed.input, &speech_wav)
+                .map_err(|err| err.to_string())?;
+            let utterances = state
+                .speech
+                .transcribe(&speech_wav)
+                .map_err(|err| err.to_string())?;
+            report(1.0);
+            Ok(Execution::Transcript(crate::speech::segments_from(
+                utterances,
+            )))
+        }
         "create_export" => {
             let output = root
                 .join("projects")
@@ -466,7 +561,34 @@ enum Execution {
     Proxy(PathBuf),
     Audio { path: PathBuf, peaks: Vec<f32> },
     Thumbnail(PathBuf),
+    Scenes(Vec<crate::media::SceneSpan>),
+    Silences(Vec<crate::media::SilenceSpan>),
+    Transcript(Vec<crate::project::TranscriptSegment>),
     Export(PathBuf),
+}
+
+fn stored_path(
+    state: &AppState,
+    project_id: &str,
+    media_id: &str,
+    audio: bool,
+) -> Result<PathBuf, String> {
+    let store = lock(&state.store);
+    let project = store
+        .load_project(project_id)
+        .map_err(|err| err.to_string())?;
+    let media = project
+        .media
+        .iter()
+        .find(|item| item.media_id == media_id)
+        .ok_or_else(|| "that video is not in the project".to_string())?;
+    let path = if audio {
+        media.audio_path.clone()
+    } else {
+        media.proxy_path.clone()
+    };
+    path.map(PathBuf::from)
+        .ok_or_else(|| "the audio pass has not finished".to_string())
 }
 
 fn finalize(
@@ -482,6 +604,7 @@ fn finalize(
     };
     let cancelled = claimed.cancel.load(Ordering::Relaxed)
         || matches!(outcome.as_ref(), Err(message) if message == "cancelled");
+    let transcribed = !cancelled && claimed.job_type == "transcribe_media" && outcome.is_ok();
     let Some(index) = project
         .jobs
         .iter()
@@ -511,6 +634,9 @@ fn finalize(
                 if claimed.job_type == "create_export" {
                     record_version(&mut project, "Exported video");
                 }
+                if claimed.job_type == "transcribe_media" {
+                    record_version(&mut project, "Transcribed video");
+                }
             }
             Err(message) => {
                 project.jobs[index].state = JobState::Failed;
@@ -537,6 +663,14 @@ fn finalize(
                 project_id: project_id.into(),
                 kind: "export".into(),
                 amount: 1.0,
+                at: now_iso(),
+            });
+        }
+        if transcribed {
+            let _ = meter.record(CostEntry {
+                project_id: project_id.into(),
+                kind: "transcription_ms".into(),
+                amount: claimed.duration_ms as f64,
                 at: now_iso(),
             });
         }
@@ -595,6 +729,28 @@ fn apply_execution(project: &mut Project, media_id: &str, execution: Execution) 
                 media.thumbnail_path = Some(path.display().to_string());
             }
         }
+        Execution::Scenes(scenes) => {
+            if let Some(media) = project
+                .media
+                .iter_mut()
+                .find(|item| item.media_id == media_id)
+            {
+                media.scenes = scenes;
+            }
+        }
+        Execution::Silences(silences) => {
+            if let Some(media) = project
+                .media
+                .iter_mut()
+                .find(|item| item.media_id == media_id)
+            {
+                media.silences = silences;
+            }
+        }
+        Execution::Transcript(segments) => {
+            project.transcript.media_id = media_id.into();
+            project.transcript.segments = segments;
+        }
         Execution::Export(path) => {
             project.exports.push(ExportRecord {
                 export_id: new_id("exp"),
@@ -632,6 +788,9 @@ fn running_message(job_type: &str) -> &'static str {
         "create_proxy" => "Creating proxy",
         "extract_audio" => "Building waveform",
         "create_thumbnail" => "Creating thumbnail",
+        "detect_scenes" => "Detecting scenes",
+        "detect_silence" => "Detecting silence",
+        "transcribe_media" => "Transcribing",
         "create_export" => "Exporting",
         _ => "Working",
     }
@@ -741,6 +900,33 @@ mod tests {
             std::fs::write(output, b"png").map_err(|err| MediaError::Message(err.to_string()))
         }
 
+        fn detect_scenes(
+            &self,
+            _input: &Path,
+            duration_ms: u64,
+        ) -> Result<Vec<crate::media::SceneSpan>, MediaError> {
+            Ok(vec![crate::media::SceneSpan {
+                start_ms: 0,
+                end_ms: duration_ms,
+                thumbnail_path: None,
+            }])
+        }
+
+        fn detect_silence(
+            &self,
+            _input: &Path,
+            _duration_ms: u64,
+        ) -> Result<Vec<crate::media::SilenceSpan>, MediaError> {
+            Ok(vec![crate::media::SilenceSpan {
+                start_ms: 100,
+                end_ms: 400,
+            }])
+        }
+
+        fn extract_speech(&self, _input: &Path, output: &Path) -> Result<(), MediaError> {
+            write_pcm16_wav(output, &[0, 1000, 0])
+        }
+
         fn export_video(
             &self,
             _input: &Path,
@@ -758,10 +944,23 @@ mod tests {
         }
     }
 
+    fn scripted_speech() -> crate::speech::ScriptedSpeech {
+        crate::speech::ScriptedSpeech {
+            text: "I was talking about GTA six".into(),
+            start_ms: 12_400,
+            end_ms: 15_000,
+        }
+    }
+
     fn state() -> (PathBuf, AppState) {
         let root =
             std::env::temp_dir().join(format!("tippy-svc-{}", uuid::Uuid::new_v4().simple()));
-        let state = AppState::open(root.clone(), Box::new(FakeEngine)).unwrap();
+        let state = AppState::open(
+            root.clone(),
+            Box::new(FakeEngine),
+            Box::new(scripted_speech()),
+        )
+        .unwrap();
         (root, state)
     }
 
@@ -772,7 +971,7 @@ mod tests {
         std::fs::write(&source, b"original-bytes").unwrap();
         let created = create_project(&state, "Evening stream").unwrap();
         let imported = import_video(&state, &created.project_id, &source).unwrap();
-        assert_eq!(imported.jobs.len(), 4);
+        assert_eq!(imported.jobs.len(), 7);
         assert!(imported
             .jobs
             .iter()
@@ -792,10 +991,28 @@ mod tests {
         assert!(!media.waveform.is_empty());
         assert!(media.waveform.iter().copied().fold(0f32, f32::max) > 0.4);
         assert!(media.thumbnail_path.is_some());
+        assert!(!media.scenes.is_empty());
+        assert_eq!(media.silences.len(), 1);
+        assert_eq!(
+            project.transcript.segments[0].text,
+            "I was talking about GTA six"
+        );
+        let (message, hits) = crate::speech::answer_question(
+            &project.transcript.segments,
+            "Where did I talk about GTA VI?",
+        )
+        .unwrap();
+        assert_eq!(hits[0].start_ms, 12_400);
+        assert!(message.contains("0:12"));
         assert!(project
             .jobs
             .iter()
             .all(|job| job.state == JobState::Completed));
+        assert!(project
+            .tippy_context
+            .versions
+            .iter()
+            .any(|version| version.label == "Transcribed video"));
         assert_eq!(std::fs::read(&source).unwrap(), b"original-bytes");
         export_video(&state, &project.project_id, &media.media_id).unwrap();
         run_pending(&state, &project.project_id, &mut |_, _| {}).unwrap();
@@ -806,7 +1023,12 @@ mod tests {
             .versions
             .iter()
             .any(|version| version.label == "Exported video"));
-        let reopened = AppState::open(root.clone(), Box::new(FakeEngine)).unwrap();
+        let reopened = AppState::open(
+            root.clone(),
+            Box::new(FakeEngine),
+            Box::new(scripted_speech()),
+        )
+        .unwrap();
         let again = open_project(&reopened, &project.project_id).unwrap();
         assert_eq!(again.name, "Evening stream");
         assert_eq!(again.media.len(), 1);
@@ -828,7 +1050,12 @@ mod tests {
             store.save_project(&saved, true).unwrap();
         }
         drop(state);
-        let relaunched = AppState::open(root.clone(), Box::new(FakeEngine)).unwrap();
+        let relaunched = AppState::open(
+            root.clone(),
+            Box::new(FakeEngine),
+            Box::new(scripted_speech()),
+        )
+        .unwrap();
         let ids = recover_all(&relaunched);
         assert_eq!(ids, vec![project.project_id.clone()]);
         let recovered = open_project(&relaunched, &project.project_id).unwrap();
@@ -861,7 +1088,12 @@ mod tests {
         assert!(engine.ready, "{}", engine.message);
         let root =
             std::env::temp_dir().join(format!("tippy-real-{}", uuid::Uuid::new_v4().simple()));
-        let state = AppState::open(root.clone(), Box::new(FfmpegMediaEngine)).unwrap();
+        let state = AppState::open(
+            root.clone(),
+            Box::new(FfmpegMediaEngine),
+            Box::new(scripted_speech()),
+        )
+        .unwrap();
         let source = root.join("bars.mp4");
         crate::media::render_color_bars(&source).unwrap();
         let project = create_project(&state, "Color bars").unwrap();

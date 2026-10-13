@@ -43,6 +43,12 @@ export function jobLabel(jobType: string): string {
       return "Waveform";
     case "create_thumbnail":
       return "Thumbnail";
+    case "detect_scenes":
+      return "Scenes";
+    case "detect_silence":
+      return "Silence";
+    case "transcribe_media":
+      return "Transcript";
     case "create_export":
       return "Export";
     default:
@@ -78,6 +84,26 @@ export function formatWhen(iso: string): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+export function searchSubject(query: string): string {
+  const trimmed = query.trim().replace(/[?.!]+$/, "").trim();
+  const lower = trimmed.toLowerCase();
+  const leads = [
+    "where did i talk about ",
+    "where did i mention ",
+    "where did i say ",
+    "find where i talked about ",
+    "find where i talk about ",
+    "find where i mentioned ",
+    "find where i said ",
+  ];
+  for (const lead of leads) {
+    if (lower.startsWith(lead)) {
+      return lower.slice(lead.length).trim();
+    }
+  }
+  return trimmed;
 }
 
 export function privacyLabel(mode: string): string {

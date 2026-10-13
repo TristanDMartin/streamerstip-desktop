@@ -36,6 +36,22 @@ impl ProbeInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct SceneSpan {
+    pub start_ms: u64,
+    pub end_ms: u64,
+    #[serde(default)]
+    pub thumbnail_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SilenceSpan {
+    pub start_ms: u64,
+    pub end_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct EngineStatus {
     pub ready: bool,
     pub ffmpeg: bool,
@@ -92,6 +108,13 @@ pub trait MediaEngine: Send + Sync {
         has_audio: bool,
     ) -> Result<(), MediaError>;
     fn create_thumbnail(&self, input: &Path, output: &Path, at_ms: u64) -> Result<(), MediaError>;
+    fn detect_scenes(&self, input: &Path, duration_ms: u64) -> Result<Vec<SceneSpan>, MediaError>;
+    fn detect_silence(
+        &self,
+        input: &Path,
+        duration_ms: u64,
+    ) -> Result<Vec<SilenceSpan>, MediaError>;
+    fn extract_speech(&self, input: &Path, output: &Path) -> Result<(), MediaError>;
     fn export_video(
         &self,
         input: &Path,
@@ -279,6 +302,55 @@ impl MediaEngine for FfmpegMediaEngine {
             input.display().to_string(),
             "-frames:v".into(),
             "1".into(),
+            output.display().to_string(),
+        ];
+        ensure_parent(output)?;
+        run_ffmpeg(&args, 0, &mut |_| {})
+    }
+
+    fn detect_scenes(&self, input: &Path, duration_ms: u64) -> Result<Vec<SceneSpan>, MediaError> {
+        let stderr = ffmpeg_stderr(&[
+            "-i".into(),
+            input.display().to_string(),
+            "-filter:v".into(),
+            "select=gt(scene\\,0.30),showinfo".into(),
+            "-an".into(),
+            "-f".into(),
+            "null".into(),
+            "-".into(),
+        ])?;
+        Ok(build_scenes(parse_scene_times_ms(&stderr), duration_ms))
+    }
+
+    fn detect_silence(
+        &self,
+        input: &Path,
+        duration_ms: u64,
+    ) -> Result<Vec<SilenceSpan>, MediaError> {
+        let stderr = ffmpeg_stderr(&[
+            "-i".into(),
+            input.display().to_string(),
+            "-af".into(),
+            "silencedetect=noise=-35dB:d=0.35".into(),
+            "-f".into(),
+            "null".into(),
+            "-".into(),
+        ])?;
+        Ok(parse_silences(&stderr, duration_ms))
+    }
+
+    fn extract_speech(&self, input: &Path, output: &Path) -> Result<(), MediaError> {
+        let args = vec![
+            "-y".into(),
+            "-i".into(),
+            input.display().to_string(),
+            "-vn".into(),
+            "-ac".into(),
+            "1".into(),
+            "-ar".into(),
+            "16000".into(),
+            "-c:a".into(),
+            "pcm_s16le".into(),
             output.display().to_string(),
         ];
         ensure_parent(output)?;
@@ -582,6 +654,112 @@ fn ensure_parent(path: &Path) -> Result<(), MediaError> {
     Ok(())
 }
 
+fn ffmpeg_stderr(args: &[String]) -> Result<String, MediaError> {
+    require_binary("ffmpeg")?;
+    assert_lgpl_args(args)?;
+    let mut command_args = vec!["-hide_banner".to_string(), "-y".into()];
+    command_args.extend(args.iter().cloned());
+    let output = Command::new("ffmpeg")
+        .args(&command_args)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|err| MediaError::Ffmpeg(err.to_string()))?;
+    if !output.status.success() {
+        return Err(MediaError::Ffmpeg(tail(&output.stderr)));
+    }
+    Ok(String::from_utf8_lossy(&output.stderr).into_owned())
+}
+
+pub fn parse_scene_times_ms(stderr: &str) -> Vec<u64> {
+    let mut times = Vec::new();
+    for line in stderr.lines() {
+        let Some(index) = line.find("pts_time:") else {
+            continue;
+        };
+        let token = line[index + "pts_time:".len()..]
+            .split_whitespace()
+            .next()
+            .unwrap_or("");
+        if let Ok(seconds) = token.parse::<f64>() {
+            times.push((seconds * 1000.0).round() as u64);
+        }
+    }
+    times.sort_unstable();
+    times.dedup();
+    times
+}
+
+pub fn build_scenes(mut cuts_ms: Vec<u64>, duration_ms: u64) -> Vec<SceneSpan> {
+    if !cuts_ms.contains(&0) {
+        cuts_ms.insert(0, 0);
+    }
+    cuts_ms.sort_unstable();
+    cuts_ms.dedup();
+    if duration_ms > 0 {
+        cuts_ms.retain(|time| *time < duration_ms);
+    }
+    if cuts_ms.is_empty() {
+        cuts_ms.push(0);
+    }
+    cuts_ms
+        .iter()
+        .enumerate()
+        .filter_map(|(index, start)| {
+            let end = cuts_ms
+                .get(index + 1)
+                .copied()
+                .unwrap_or(duration_ms.max(*start));
+            if end <= *start && duration_ms > 0 {
+                return None;
+            }
+            Some(SceneSpan {
+                start_ms: *start,
+                end_ms: end,
+                thumbnail_path: None,
+            })
+        })
+        .collect()
+}
+
+pub fn parse_silences(stderr: &str, duration_ms: u64) -> Vec<SilenceSpan> {
+    let mut spans = Vec::new();
+    let mut open = None;
+    for line in stderr.lines() {
+        if let Some(value) = line.split("silence_start:").nth(1) {
+            open = Some(seconds_token(value));
+        }
+        if let Some(value) = line.split("silence_end:").nth(1) {
+            let end = seconds_token(value);
+            if let Some(start) = open.take() {
+                if end > start {
+                    spans.push(SilenceSpan {
+                        start_ms: start,
+                        end_ms: end,
+                    });
+                }
+            }
+        }
+    }
+    if let Some(start) = open {
+        if duration_ms > start {
+            spans.push(SilenceSpan {
+                start_ms: start,
+                end_ms: duration_ms,
+            });
+        }
+    }
+    spans
+}
+
+fn seconds_token(value: &str) -> u64 {
+    let token = value
+        .split(|character: char| character == '|' || character.is_whitespace())
+        .find(|token| !token.is_empty())
+        .unwrap_or("0");
+    let seconds = token.parse::<f64>().unwrap_or(0.0);
+    (seconds * 1000.0).round() as u64
+}
+
 fn binary_ok(name: &str) -> bool {
     Command::new(name)
         .arg("-version")
@@ -760,6 +938,26 @@ mod tests {
             )
             .unwrap();
         assert_eq!(fs::read(&source).unwrap(), original);
+        let scenes = engine.detect_scenes(&source, probe.duration_ms).unwrap();
+        assert!(!scenes.is_empty());
+        let silences = engine.detect_silence(&audio, probe.duration_ms).unwrap();
+        assert!(silences.is_empty() || silences.iter().all(|span| span.end_ms > span.start_ms));
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn scene_and_silence_parsers_keep_timestamps() {
+        let times = parse_scene_times_ms("n: 0 pts_time:0.8 duration\nn: 1 pts_time:2.5");
+        let scenes = build_scenes(times, 4_000);
+        assert_eq!(scenes[0].start_ms, 0);
+        assert_eq!(scenes[1].start_ms, 800);
+        assert_eq!(scenes[1].end_ms, 2_500);
+        assert_eq!(scenes[2].end_ms, 4_000);
+        let silences = parse_silences(
+            "[silencedetect] silence_start: 0.5\n[silencedetect] silence_end: 1.25 | silence_duration: 0.75",
+            3_000,
+        );
+        assert_eq!(silences[0].start_ms, 500);
+        assert_eq!(silences[0].end_ms, 1_250);
     }
 }

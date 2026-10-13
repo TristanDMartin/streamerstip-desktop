@@ -3,6 +3,7 @@ import { useState, type RefObject } from "react";
 export const TIPPY_NOT_CONNECTED = "Tippy is not connected yet.";
 
 const SUGGESTIONS = [
+  "Where did I talk about GTA VI?",
   "Find my best clips",
   "Create 4 Shorts",
   "Remove dead space",

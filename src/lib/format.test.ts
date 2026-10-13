@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { formatBytes, formatDuration, jobLabel, jobPhase, phaseLabel } from "./format";
+import {
+  formatBytes,
+  formatDuration,
+  jobLabel,
+  jobPhase,
+  phaseLabel,
+  searchSubject,
+} from "./format";
 
 describe("job phases", () => {
   it("maps durable states onto the visible phases", () => {
@@ -15,7 +22,9 @@ describe("job phases", () => {
 
   it("labels the import pipeline in creator language", () => {
     expect(jobLabel("extract_audio")).toBe("Waveform");
+    expect(jobLabel("transcribe_media")).toBe("Transcript");
     expect(jobLabel("probe_media")).toBe("Probe media");
+    expect(searchSubject("Where did I talk about GTA VI?")).toBe("gta vi");
     expect(formatDuration(125000)).toBe("2:05");
     expect(formatBytes(1536)).toBe("1.5 KB");
   });

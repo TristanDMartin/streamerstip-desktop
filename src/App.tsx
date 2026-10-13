@@ -53,6 +53,7 @@ export function App() {
   const [jobs, setJobs] = useState<JobListItem[]>([]);
   const [project, setProject] = useState<Project | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [seek, setSeek] = useState<{ ms: number; token: number } | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const routeRef = useRef(route);
   const workspaceGen = useRef(0);
@@ -188,6 +189,10 @@ export function App() {
     await refreshWorkspace();
   }
 
+  function requestSeek(ms: number) {
+    setSeek({ ms, token: Date.now() });
+  }
+
   const accountLabel =
     meta?.account.label ?? "Waiting for the shared StreamersTip identity contract";
 
@@ -261,6 +266,9 @@ export function App() {
               "FFmpeg was not found. Install the apt package `ffmpeg`."
             }
             previewOrigin={meta?.previewOrigin ?? ""}
+            seekToken={seek?.token ?? 0}
+            seekMs={seek?.ms ?? null}
+            onSeek={requestSeek}
             onImport={handleImport}
             onExport={handleExport}
           />
@@ -269,8 +277,14 @@ export function App() {
       <TippyRail
         composerRef={composerRef}
         onSubmit={async (text) => {
-          const reply = await submitTippy(text);
-          return reply.connected ? reply.message : TIPPY_NOT_CONNECTED;
+          const reply = await submitTippy(text, project?.projectId);
+          if (reply.hits[0]) {
+            requestSeek(reply.hits[0].startMs);
+          }
+          if (reply.handled || reply.connected) {
+            return reply.message;
+          }
+          return TIPPY_NOT_CONNECTED;
         }}
       />
       <JobBar jobs={jobs} onCancel={(job) => void handleCancel(job)} />

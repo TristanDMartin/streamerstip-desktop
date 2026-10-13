@@ -11,6 +11,7 @@ mod preview;
 mod project;
 mod runtime;
 mod service;
+mod speech;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -127,13 +128,12 @@ fn cancel_job(
 }
 
 #[tauri::command]
-fn submit_tippy(state: State<'_, AppState>, text: String) -> TippyReply {
-    log::log_line(
-        &state.log_path,
-        "info",
-        "tippy composer submitted; no model was called",
-    );
-    ai::submit_tippy_message(&text)
+fn submit_tippy(
+    state: State<'_, AppState>,
+    text: String,
+    project_id: Option<String>,
+) -> TippyReply {
+    service::ask_tippy(state.inner(), project_id.as_deref(), &text)
 }
 
 fn kick(app: &AppHandle, project_id: &str) {
@@ -174,7 +174,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let dir = data_dir(app)?;
-            let mut state = AppState::open(dir.clone(), Box::new(media::FfmpegMediaEngine))?;
+            let mut state = AppState::open(
+                dir.clone(),
+                Box::new(media::FfmpegMediaEngine),
+                Box::new(speech::WhisperCli::discover()),
+            )?;
             match preview::serve(dir) {
                 Ok(origin) => {
                     log::log_line(&state.log_path, "info", &format!("preview server {origin}"));
