@@ -44,8 +44,8 @@ export function cancelJob(projectId: string, jobId: string): Promise<Project> {
   return invoke<Project>("cancel_job", { projectId, jobId });
 }
 
-export function submitTippy(text: string): Promise<TippyReply> {
-  return invoke<TippyReply>("submit_tippy", { text });
+export function submitTippy(text: string, projectId?: string): Promise<TippyReply> {
+  return invoke<TippyReply>("submit_tippy", { text, projectId: projectId ?? null });
 }
 
 export function onTippyEvent(

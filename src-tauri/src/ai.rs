@@ -181,16 +181,31 @@ impl ModelRouter {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TippyHit {
+    pub segment_id: String,
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TippyReply {
     pub connected: bool,
+    #[serde(default)]
+    pub handled: bool,
     pub message: String,
+    #[serde(default)]
+    pub hits: Vec<TippyHit>,
 }
 
 pub fn submit_tippy_message(text: &str) -> TippyReply {
     let _trimmed = text.trim();
     TippyReply {
         connected: false,
+        handled: false,
         message: "Tippy is not connected yet.".into(),
+        hits: Vec::new(),
     }
 }
 

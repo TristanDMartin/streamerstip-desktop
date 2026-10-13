@@ -54,6 +54,14 @@ pub fn plan_import() -> Vec<TaskNode> {
         node("proxy", "create_proxy", "media_analyst", vec!["probe"]),
         node("audio", "extract_audio", "media_analyst", vec!["probe"]),
         node("thumb", "create_thumbnail", "media_analyst", vec!["probe"]),
+        node("silence", "detect_silence", "media_analyst", vec!["audio"]),
+        node("scenes", "detect_scenes", "media_analyst", vec!["probe"]),
+        node(
+            "transcript",
+            "transcribe_media",
+            "transcript_agent",
+            vec!["audio"],
+        ),
     ]
 }
 
@@ -120,7 +128,7 @@ pub const WORKERS: &[WorkerDefinition] = &[
     WorkerDefinition {
         id: "transcript_agent",
         role: "Transcript Agent",
-        responsibility: "Speech-to-text is not connected in this build",
+        responsibility: "Local speech-to-text, timestamps, and transcript search",
     },
     WorkerDefinition {
         id: "moment_scout",
@@ -187,6 +195,21 @@ pub fn tools() -> &'static [ToolDefinition] {
             id: "create_export",
             engine_method: "export_video",
             agent: "media_analyst",
+        },
+        ToolDefinition {
+            id: "detect_silence",
+            engine_method: "detect_silence",
+            agent: "media_analyst",
+        },
+        ToolDefinition {
+            id: "detect_scenes",
+            engine_method: "detect_scenes",
+            agent: "media_analyst",
+        },
+        ToolDefinition {
+            id: "transcribe_media",
+            engine_method: "transcribe",
+            agent: "transcript_agent",
         },
     ]
 }

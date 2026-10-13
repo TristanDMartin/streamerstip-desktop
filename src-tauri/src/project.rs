@@ -25,6 +25,42 @@ pub struct MediaAsset {
     pub waveform: Vec<f32>,
     pub probe: Option<ProbeInfo>,
     pub imported_at: String,
+    #[serde(default)]
+    pub scenes: Vec<crate::media::SceneSpan>,
+    #[serde(default)]
+    pub silences: Vec<crate::media::SilenceSpan>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptWord {
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptSegment {
+    pub segment_id: String,
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub text: String,
+    #[serde(default)]
+    pub speaker: Option<String>,
+    #[serde(default)]
+    pub profanity: bool,
+    #[serde(default)]
+    pub words: Vec<TranscriptWord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Transcript {
+    #[serde(default)]
+    pub media_id: String,
+    #[serde(default)]
+    pub segments: Vec<TranscriptSegment>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -99,7 +135,7 @@ pub struct Project {
     pub updated_at: String,
     pub media: Vec<MediaAsset>,
     pub sequences: Vec<Sequence>,
-    pub transcript: Value,
+    pub transcript: Transcript,
     pub moments: Vec<Value>,
     pub jobs: Vec<Job>,
     pub actions: Vec<ActionRecord>,
@@ -120,7 +156,7 @@ impl Project {
             updated_at: now,
             media: Vec::new(),
             sequences: Vec::new(),
-            transcript: serde_json::json!({}),
+            transcript: Transcript::default(),
             moments: Vec::new(),
             jobs: Vec::new(),
             actions: Vec::new(),
@@ -404,7 +440,7 @@ mod tests {
     #[test]
     fn project_json_uses_the_section_23_keys() {
         let project = Project::create("Stream", "owner_1");
-        let value = serde_json::to_value(&project).unwrap();
+        let mut value = serde_json::to_value(&project).unwrap();
         let mut keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
         keys.sort();
         assert_eq!(
@@ -428,8 +464,14 @@ mod tests {
             ]
         );
         assert_eq!(value["schemaVersion"], 1);
-        assert_eq!(value["transcript"], serde_json::json!({}));
+        assert!(value["transcript"]["segments"]
+            .as_array()
+            .unwrap()
+            .is_empty());
         assert_eq!(value["brandProfile"], serde_json::json!({}));
+        value["transcript"] = serde_json::json!({});
+        let legacy = parse_project_bytes(&serde_json::to_vec(&value).unwrap()).unwrap();
+        assert!(legacy.transcript.segments.is_empty());
     }
 
     #[test]
