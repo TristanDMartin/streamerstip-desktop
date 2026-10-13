@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Local Tippy Desktop shell",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:default"]
+}
