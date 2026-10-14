@@ -126,6 +126,33 @@ impl Default for TippyContext {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct MomentScores {
+    pub hook_strength: f64,
+    pub emotion: f64,
+    pub clarity: f64,
+    pub payoff: f64,
+    pub pacing: f64,
+    pub standalone_context: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Moment {
+    pub moment_id: String,
+    pub media_id: String,
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub usable_ms: u64,
+    pub category: String,
+    pub quote: String,
+    pub explanation: String,
+    #[serde(default)]
+    pub preview_path: Option<String>,
+    pub scores: MomentScores,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Project {
     pub schema_version: u32,
     pub project_id: String,
@@ -136,7 +163,7 @@ pub struct Project {
     pub media: Vec<MediaAsset>,
     pub sequences: Vec<Sequence>,
     pub transcript: Transcript,
-    pub moments: Vec<Value>,
+    pub moments: Vec<Moment>,
     pub jobs: Vec<Job>,
     pub actions: Vec<ActionRecord>,
     pub exports: Vec<ExportRecord>,

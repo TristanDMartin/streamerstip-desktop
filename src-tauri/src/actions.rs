@@ -219,6 +219,18 @@ const ACTIONS: &[ActionDefinition] = &[
         "delete_derived_file",
     ),
     action(
+        "scout_moments",
+        "Scout moments",
+        "{\"type\":\"object\",\"required\":[\"mediaId\"]}",
+        "{\"type\":\"object\",\"required\":[\"moments\"]}",
+        "project_owner",
+        CostClass::FreeLocal,
+        true,
+        false,
+        false,
+        "restore_previous_version",
+    ),
+    action(
         "transcribe_media",
         "Transcribe media",
         "{\"type\":\"object\",\"required\":[\"mediaId\"]}",

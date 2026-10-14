@@ -26,6 +26,8 @@ describe("job phases", () => {
     expect(jobLabel("probe_media")).toBe("Probe media");
     expect(searchSubject("Where did I talk about GTA VI?")).toBe("gta vi");
     expect(formatDuration(125000)).toBe("2:05");
+    expect(formatDuration(8072000)).toBe("2:14:32");
+    expect(jobLabel("scout_moments")).toBe("Moments");
     expect(formatBytes(1536)).toBe("1.5 KB");
   });
 });

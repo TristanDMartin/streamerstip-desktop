@@ -11,7 +11,7 @@ import {
   phaseLabel,
   privacyLabel,
 } from "../lib/format";
-import type { Job, MediaAsset, Project, TranscriptSegment } from "../types";
+import type { Job, MediaAsset, Moment, Project, TranscriptSegment } from "../types";
 
 interface ProjectViewProps {
   project: Project;
@@ -122,6 +122,7 @@ export function ProjectView({
                 (job) => job.type === "transcribe_media" && job.state === "failed",
               )?.error ?? null
             }
+            moments={project.moments}
             onSeek={onSeek}
             onPlayhead={setPlayhead}
           />
@@ -153,6 +154,7 @@ function MediaStage({
   seekToken,
   seekMs,
   segments,
+  moments,
   transcriptError,
   onSeek,
   onPlayhead,
@@ -163,6 +165,7 @@ function MediaStage({
   seekToken: number;
   seekMs: number | null;
   segments: TranscriptSegment[];
+  moments: Moment[];
   transcriptError: string | null;
   onSeek: (ms: number) => void;
   onPlayhead: (value: number) => void;
@@ -252,6 +255,7 @@ function MediaStage({
           <p className="empty">Waveform appears after the audio pass.</p>
         )}
       </div>
+      <Moments moments={moments} onSeek={onSeek} />
       <Analysis
         media={media}
         segments={segments}
@@ -260,6 +264,71 @@ function MediaStage({
         onQuery={setQuery}
         onSeek={onSeek}
       />
+    </div>
+  );
+}
+
+const SCORE_BARS: Array<{ key: keyof Moment["scores"]; label: string }> = [
+  { key: "hookStrength", label: "Hook" },
+  { key: "emotion", label: "Emotion" },
+  { key: "clarity", label: "Clarity" },
+  { key: "payoff", label: "Payoff" },
+  { key: "pacing", label: "Pacing" },
+  { key: "standaloneContext", label: "Context" },
+];
+
+function Moments({ moments, onSeek }: { moments: Moment[]; onSeek: (ms: number) => void }) {
+  return (
+    <div className="moment-block" data-testid="moments">
+      <div className="waveform-label">
+        <span>Moments</span>
+        <span>{moments.length}</span>
+      </div>
+      {moments.length > 0 ? (
+        <ul className="moment-list">
+          {moments.map((moment) => (
+            <li key={moment.momentId}>
+              <article className="moment-card">
+                {moment.previewPath ? (
+                  <img src={convertFileSrc(moment.previewPath)} alt="" />
+                ) : (
+                  <span className="moment-still" />
+                )}
+                <div className="moment-copy">
+                  <p className="moment-kicker">
+                    <em>Tippy</em>
+                    <strong>{moment.category}</strong>
+                    <time>
+                      {formatDuration(moment.startMs)}–{formatDuration(moment.endMs)}
+                    </time>
+                  </p>
+                  <p className="moment-quote">“{moment.quote}”</p>
+                  <p className="moment-why">{moment.explanation}</p>
+                  <ul className="score-bars">
+                    {SCORE_BARS.map((bar) => {
+                      const value = moment.scores[bar.key];
+                      return (
+                        <li key={bar.key}>
+                          <span>{bar.label}</span>
+                          <span className="bar" aria-hidden="true">
+                            <span style={{ width: `${Math.round(value * 100)}%` }} />
+                          </span>
+                          <span className="bar-value">{value.toFixed(2)}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <button type="button" onClick={() => onSeek(moment.startMs)}>
+                    Preview
+                  </button>
+                </div>
+              </article>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="empty">Moments appear after the local scout pass.</p>
+      )}
     </div>
   );
 }
@@ -357,6 +426,7 @@ function Pipeline({ jobs }: { jobs: Job[] }) {
     "detect_scenes",
     "detect_silence",
     "transcribe_media",
+    "scout_moments",
     "create_export",
   ];
   const shown = ordered

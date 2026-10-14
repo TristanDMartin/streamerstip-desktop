@@ -54,6 +54,28 @@ export interface Transcript {
   segments: TranscriptSegment[];
 }
 
+export interface MomentScores {
+  hookStrength: number;
+  emotion: number;
+  clarity: number;
+  payoff: number;
+  pacing: number;
+  standaloneContext: number;
+}
+
+export interface Moment {
+  momentId: string;
+  mediaId: string;
+  startMs: number;
+  endMs: number;
+  usableMs: number;
+  category: string;
+  quote: string;
+  explanation: string;
+  previewPath: string | null;
+  scores: MomentScores;
+}
+
 export interface SequenceClip {
   mediaId: string;
   startMs: number;
@@ -133,7 +155,7 @@ export interface Project {
   media: MediaAsset[];
   sequences: Sequence[];
   transcript: Transcript;
-  moments: unknown[];
+  moments: Moment[];
   jobs: Job[];
   actions: ActionRecord[];
   exports: ExportRecord[];
