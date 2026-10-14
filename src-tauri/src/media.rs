@@ -359,7 +359,7 @@ impl MediaEngine for FfmpegMediaEngine {
                 let start = caption.start_ms as f64 / 1000.0;
                 let end = caption.end_ms as f64 / 1000.0;
                 filters.push(format!(
-                    "drawtext=fontfile={}:textfile={}:expansion=none:fontsize=42:fontcolor=white:box=1:boxcolor=black@0.75:boxborderw=12:x=(w-text_w)/2:y=h-text_h-80:enable='between(t\\,{start:.3}\\,{end:.3})'",
+                    "drawtext=fontfile={}:textfile={}:expansion=none:fontsize=42:fontcolor=white:box=1:boxcolor=black@0.75:boxborderw=12:x=(w-text_w)/2:y=h-text_h-200:enable='between(t\\,{start:.3}\\,{end:.3})'",
                     escape_filter_path(&font),
                     escape_filter_path(&text_path),
                 ));

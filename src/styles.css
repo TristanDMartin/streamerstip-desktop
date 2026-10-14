@@ -701,21 +701,6 @@ textarea:focus,
   background: #090c12;
 }
 
-.short-caption {
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 28px;
-  margin: 0;
-  text-align: center;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.75);
-  font-weight: 700;
-  font-size: 13px;
-  line-height: 1.3;
-  padding: 4px 6px;
-}
-
 .review-changes ul {
   list-style: none;
   margin: 8px 0;

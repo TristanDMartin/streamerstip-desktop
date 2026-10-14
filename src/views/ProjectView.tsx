@@ -446,11 +446,6 @@ function Shorts({
     shorts.find((sequence) => sequence.variation === "tippy") ??
     shorts[0];
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [shortTime, setShortTime] = useState(0);
-  const activeCaption =
-    selected?.captions.find(
-      (caption) => shortTime * 1000 >= caption.startMs && shortTime * 1000 < caption.endMs,
-    ) ?? null;
   const previewPath = selected?.previewPath ?? "";
   const portrait =
     selected?.variation === "tippy" && previewPath && previewOrigin
@@ -474,7 +469,6 @@ function Shorts({
     const at =
       selectedVariation === "original" ? selectedStart / 1000 : Math.max(0, captionStart / 1000);
     videoRef.current.currentTime = at;
-    setShortTime(at);
   }, [selectedIdLive, selectedVariation, selectedStart, captionStart, portrait, previewStamp]);
   if (shorts.length === 0) {
     return null;
@@ -542,18 +536,11 @@ function Shorts({
                       ? selected.sourceStartMs / 1000
                       : Math.max(0, (selected.captions[0]?.startMs ?? 0) / 1000);
                   event.currentTarget.currentTime = at;
-                  setShortTime(at);
                 }}
-                onTimeUpdate={(event) => setShortTime(event.currentTarget.currentTime)}
               />
             ) : (
               <p className="empty">The Short preview appears when the render finishes.</p>
             )}
-            {activeCaption && selected.variation === "tippy" ? (
-              <p className="short-caption" data-testid="short-caption">
-                {activeCaption.text}
-              </p>
-            ) : null}
           </div>
           <div className="review-changes" data-testid="review-changes">
             <p className="section-label">Review Changes</p>
