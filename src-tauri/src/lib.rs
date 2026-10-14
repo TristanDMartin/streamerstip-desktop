@@ -14,6 +14,7 @@ mod scout;
 mod service;
 mod shorts;
 mod speech;
+mod team;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -127,6 +128,41 @@ fn cancel_job(
     job_id: String,
 ) -> Result<Project, String> {
     service::cancel_job(state.inner(), &project_id, &job_id).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn pause_job(
+    state: State<'_, AppState>,
+    project_id: String,
+    job_id: String,
+) -> Result<Project, String> {
+    service::pause_job(state.inner(), &project_id, &job_id).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn resume_job(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_id: String,
+    job_id: String,
+) -> Result<Project, String> {
+    let project =
+        service::resume_job(state.inner(), &project_id, &job_id).map_err(|err| err.to_string())?;
+    kick(&app, &project_id);
+    Ok(project)
+}
+
+#[tauri::command]
+fn retry_job(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_id: String,
+    job_id: String,
+) -> Result<Project, String> {
+    let project =
+        service::retry_job(state.inner(), &project_id, &job_id).map_err(|err| err.to_string())?;
+    kick(&app, &project_id);
+    Ok(project)
 }
 
 #[tauri::command]
@@ -268,6 +304,9 @@ pub fn run() {
             import_video,
             export_video,
             cancel_job,
+            pause_job,
+            resume_job,
+            retry_job,
             submit_tippy,
             create_short,
             undo_short_change,

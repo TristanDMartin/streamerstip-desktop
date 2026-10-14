@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -31,6 +31,7 @@ pub struct AppState {
     pub account: LocalAccount,
     pub log_path: PathBuf,
     pub cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    pub pauses: Mutex<HashSet<String>>,
     pub preview_origin: String,
     pub speech: Box<dyn SpeechEngine>,
 }
@@ -76,6 +77,7 @@ impl AppState {
             account,
             log_path,
             cancels: Mutex::new(HashMap::new()),
+            pauses: Mutex::new(HashSet::new()),
             preview_origin: String::new(),
             speech,
         })
@@ -382,6 +384,67 @@ pub fn cancel_job(state: &AppState, project_id: &str, job_id: &str) -> DesktopRe
             job.message = "Cancelled".into();
             job.completed_at = Some(now_iso());
         }
+    }
+    refresh_dependency_states(&mut project.jobs);
+    project.touch();
+    store.save_project(&project, true)?;
+    Ok(project)
+}
+
+pub fn pause_job(state: &AppState, project_id: &str, job_id: &str) -> DesktopResult<Project> {
+    let store = lock(&state.store);
+    let mut project = store.load_project(project_id)?;
+    let Some(index) = project.jobs.iter().position(|job| job.job_id == job_id) else {
+        return Err(DesktopError::Message(
+            "that task is not in the project".into(),
+        ));
+    };
+    if project.jobs[index].state == JobState::Running {
+        lock(&state.pauses).insert(job_id.to_string());
+        if let Some(flag) = lock(&state.cancels).get(job_id) {
+            flag.store(true, Ordering::Relaxed);
+            return Ok(project);
+        }
+        lock(&state.pauses).remove(job_id);
+    }
+    if !crate::team::mark_paused(&mut project.jobs[index]) {
+        return Ok(project);
+    }
+    refresh_dependency_states(&mut project.jobs);
+    project.touch();
+    store.save_project(&project, true)?;
+    Ok(project)
+}
+
+pub fn resume_job(state: &AppState, project_id: &str, job_id: &str) -> DesktopResult<Project> {
+    lock(&state.pauses).remove(job_id);
+    let store = lock(&state.store);
+    let mut project = store.load_project(project_id)?;
+    let Some(index) = project.jobs.iter().position(|job| job.job_id == job_id) else {
+        return Err(DesktopError::Message(
+            "that task is not in the project".into(),
+        ));
+    };
+    let dependencies_met = crate::jobs::dependencies_satisfied(&project.jobs, &project.jobs[index]);
+    if !crate::team::mark_resumed(&mut project.jobs[index], dependencies_met) {
+        return Ok(project);
+    }
+    refresh_dependency_states(&mut project.jobs);
+    project.touch();
+    store.save_project(&project, true)?;
+    Ok(project)
+}
+
+pub fn retry_job(state: &AppState, project_id: &str, job_id: &str) -> DesktopResult<Project> {
+    let store = lock(&state.store);
+    let mut project = store.load_project(project_id)?;
+    let Some(index) = project.jobs.iter().position(|job| job.job_id == job_id) else {
+        return Err(DesktopError::Message(
+            "that task is not in the project".into(),
+        ));
+    };
+    if !crate::team::mark_retried(&mut project.jobs[index]) {
+        return Ok(project);
     }
     refresh_dependency_states(&mut project.jobs);
     project.touch();
@@ -712,6 +775,39 @@ fn execute(
                 sequence_id: String::new(),
             })
         }
+        "package_content" => {
+            let project = lock(&state.store)
+                .load_project(project_id)
+                .map_err(|err| err.to_string())?;
+            let sequences = goal_sequences(&project, &claimed.job_id);
+            let drafts = crate::team::draft_packages(&sequences, &project.moments);
+            log_line(
+                &state.log_path,
+                "info",
+                "packaged locally; no model was called",
+            );
+            report(1.0);
+            Ok(Execution::Package(drafts))
+        }
+        "qa_content" => {
+            let project = lock(&state.store)
+                .load_project(project_id)
+                .map_err(|err| err.to_string())?;
+            let sequences = goal_sequences(&project, &claimed.job_id);
+            let findings = crate::team::draft_findings(&sequences, |sequence| {
+                sequence
+                    .preview_path
+                    .as_ref()
+                    .is_some_and(|path| Path::new(path).is_file())
+            });
+            log_line(
+                &state.log_path,
+                "info",
+                "checked shorts locally; no model was called",
+            );
+            report(1.0);
+            Ok(Execution::Qa(findings))
+        }
         other => Err(format!(
             "{other} is registered but not running in this phase"
         )),
@@ -730,6 +826,8 @@ enum Execution {
     Shorts(Vec<Sequence>),
     Preview { sequence_id: String, path: PathBuf },
     Export { path: PathBuf, sequence_id: String },
+    Package(Vec<crate::project::PackageDraft>),
+    Qa(Vec<crate::project::QaFinding>),
 }
 
 struct ScoutMaterial {
@@ -818,7 +916,26 @@ fn finalize(
     else {
         return;
     };
-    if cancelled {
+    let pause_requested = lock(&state.pauses).remove(&claimed.job_id);
+    let result_line = match outcome.as_ref() {
+        Ok(Execution::Package(drafts)) => drafts
+            .iter()
+            .map(|draft| draft.title.clone())
+            .collect::<Vec<_>>()
+            .join(" · "),
+        Ok(Execution::Qa(findings)) => findings
+            .iter()
+            .map(|finding| finding.summary.clone())
+            .collect::<Vec<_>>()
+            .join(" "),
+        _ => String::new(),
+    };
+    if cancelled && pause_requested {
+        project.jobs[index].state = JobState::Paused;
+        project.jobs[index].message = "Paused".into();
+        project.jobs[index].error = None;
+        project.jobs[index].completed_at = None;
+    } else if cancelled {
         project.jobs[index].state = JobState::Cancelled;
         project.jobs[index].message = "Cancelled".into();
         project.jobs[index].error = None;
@@ -829,7 +946,11 @@ fn finalize(
                 apply_execution(&mut project, &claimed.media_id, execution);
                 project.jobs[index].state = JobState::Completed;
                 project.jobs[index].progress = 1.0;
-                project.jobs[index].message = "Done".into();
+                project.jobs[index].message = if result_line.is_empty() {
+                    "Done".into()
+                } else {
+                    result_line
+                };
                 project.jobs[index].error = None;
                 project.jobs[index].completed_at = Some(now_iso());
                 record_action(
@@ -851,6 +972,12 @@ fn finalize(
                 }
                 if claimed.job_type == "export_short" {
                     record_version(&mut project, "Exported a Short");
+                }
+                if claimed.job_type == "package_content" {
+                    record_version(&mut project, "Prepared a title and hook");
+                }
+                if claimed.job_type == "qa_content" {
+                    record_version(&mut project, "Checked the Shorts");
                 }
             }
             Err(message) => {
@@ -1018,7 +1145,44 @@ fn apply_execution(project: &mut Project, media_id: &str, execution: Execution) 
                 sequence_id,
             });
         }
+        Execution::Package(_) | Execution::Qa(_) => {}
     }
+}
+
+fn goal_sequences(project: &Project, job_id: &str) -> Vec<Sequence> {
+    let moment_ids = moment_ids_for(project, job_id);
+    project
+        .sequences
+        .iter()
+        .filter(|sequence| {
+            sequence.variation == crate::shorts::VARIATION_TIPPY
+                && moment_ids
+                    .iter()
+                    .any(|moment_id| moment_id == &sequence.moment_id)
+        })
+        .cloned()
+        .collect()
+}
+
+fn moment_ids_for(project: &Project, job_id: &str) -> Vec<String> {
+    let Some(job) = project.jobs.iter().find(|job| job.job_id == job_id) else {
+        return Vec::new();
+    };
+    let mut ids = Vec::new();
+    let mut pending = job.dependencies.clone();
+    while let Some(dependency_id) = pending.pop() {
+        let Some(parent) = project.jobs.iter().find(|job| job.job_id == dependency_id) else {
+            continue;
+        };
+        if parent.job_type == "create_short" && !parent.subject_id.is_empty() {
+            if !ids.contains(&parent.subject_id) {
+                ids.push(parent.subject_id.clone());
+            }
+        } else {
+            pending.extend(parent.dependencies.clone());
+        }
+    }
+    ids
 }
 
 fn publish(
@@ -1055,6 +1219,8 @@ fn running_message(job_type: &str) -> &'static str {
         "refresh_short" => "Updating the Short",
         "export_short" => "Exporting a Short",
         "create_export" => "Exporting",
+        "package_content" => "Writing a title and hook",
+        "qa_content" => "Checking the Short",
         _ => "Working",
     }
 }
@@ -1618,6 +1784,43 @@ mod tests {
         assert_eq!(short_jobs.len(), 1);
         assert_eq!(short_jobs[0].subject_id, queued.moments[0].moment_id);
         assert_eq!(short_jobs[0].agent, "clip_editor");
+        assert!(short_jobs[0].explanation.contains("vertical Short"));
+        let package = queued
+            .jobs
+            .iter()
+            .find(|job| job.job_type == "package_content")
+            .unwrap();
+        let qa = queued
+            .jobs
+            .iter()
+            .find(|job| job.job_type == "qa_content")
+            .unwrap();
+        assert_eq!(package.agent, "packaging_agent");
+        assert_eq!(package.state, JobState::WaitingForDependency);
+        assert!(package.explanation.contains("Nothing is published"));
+        assert_eq!(qa.agent, "qa_agent");
+        assert_eq!(qa.state, JobState::WaitingForDependency);
+        let qa_id = qa.job_id.clone();
+        let paused = pause_job(&state, &created.project_id, &qa_id).unwrap();
+        assert_eq!(
+            paused
+                .jobs
+                .iter()
+                .find(|job| job.job_id == qa_id)
+                .unwrap()
+                .state,
+            JobState::Paused
+        );
+        let resumed = resume_job(&state, &created.project_id, &qa_id).unwrap();
+        assert_eq!(
+            resumed
+                .jobs
+                .iter()
+                .find(|job| job.job_id == qa_id)
+                .unwrap()
+                .state,
+            JobState::WaitingForDependency
+        );
         run_pending(&state, &created.project_id, &mut |_, _| {}).unwrap();
         let project = open_project(&state, &created.project_id).unwrap();
         let original = project
@@ -1649,6 +1852,30 @@ mod tests {
             .sequences
             .iter()
             .any(|sequence| sequence.name == "Assembly"));
+        let packaged = project
+            .jobs
+            .iter()
+            .find(|job| job.job_type == "package_content")
+            .unwrap();
+        let checked = project
+            .jobs
+            .iter()
+            .find(|job| job.job_type == "qa_content")
+            .unwrap();
+        assert_eq!(packaged.state, JobState::Completed);
+        assert!(packaged.message.contains('—'));
+        assert_eq!(checked.state, JobState::Completed);
+        assert!(checked.message.contains("ready to review"));
+        assert!(project
+            .tippy_context
+            .versions
+            .iter()
+            .any(|version| version.label == "Prepared a title and hook"));
+        assert!(project
+            .tippy_context
+            .versions
+            .iter()
+            .any(|version| version.label == "Checked the Shorts"));
         let again = ask_tippy(&state, Some(&created.project_id), "Create 4 Shorts");
         assert_eq!(again.message, "Those moments already have Shorts.");
         let undone = undo_short_change(&state, &created.project_id, &tippy.sequence_id).unwrap();

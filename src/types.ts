@@ -170,6 +170,7 @@ export interface Job {
   mediaId: string;
   message: string;
   subjectId: string;
+  explanation: string;
 }
 
 export interface Project {

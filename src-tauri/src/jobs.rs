@@ -63,6 +63,8 @@ pub struct Job {
     pub message: String,
     #[serde(default)]
     pub subject_id: String,
+    #[serde(default)]
+    pub explanation: String,
 }
 
 pub fn dependencies_satisfied(jobs: &[Job], job: &Job) -> bool {
@@ -106,7 +108,18 @@ mod tests {
             media_id: "media_1".into(),
             message: String::new(),
             subject_id: String::new(),
+            explanation: String::new(),
         }
+    }
+
+    #[test]
+    fn older_jobs_open_without_an_explanation() {
+        let parsed: Job = serde_json::from_str(
+            r#"{"jobId":"job_1","projectId":"proj_1","type":"probe_media","agent":"media_analyst","state":"completed","progress":1,"dependencies":[],"createdAt":"2026-10-13T00:00:00Z","startedAt":null,"completedAt":null,"error":null,"mediaId":"media_1","message":"Done"}"#,
+        )
+        .unwrap();
+        assert!(parsed.explanation.is_empty());
+        assert!(parsed.subject_id.is_empty());
     }
 
     #[test]

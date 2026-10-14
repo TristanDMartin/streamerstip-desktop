@@ -10,12 +10,20 @@ const SUGGESTIONS = [
   "Build a YouTube edit",
 ];
 
+interface TippyActivity {
+  id: string;
+  name: string;
+  label: string;
+  tone: string;
+}
+
 interface TippyRailProps {
   onSubmit: (text: string) => Promise<string>;
   composerRef?: RefObject<HTMLTextAreaElement>;
+  activity?: TippyActivity[];
 }
 
-export function TippyRail({ onSubmit, composerRef }: TippyRailProps) {
+export function TippyRail({ onSubmit, composerRef, activity = [] }: TippyRailProps) {
   const [draft, setDraft] = useState("");
   const [reply, setReply] = useState(TIPPY_NOT_CONNECTED);
   const [isSending, setIsSending] = useState(false);
@@ -38,6 +46,16 @@ export function TippyRail({ onSubmit, composerRef }: TippyRailProps) {
       <p className="tippy-status" data-testid="tippy-status">
         {TIPPY_NOT_CONNECTED}
       </p>
+      {activity.length > 0 ? (
+        <ul className="tippy-activity" data-testid="tippy-activity">
+          {activity.map((item) => (
+            <li key={item.id} className={`tone-${item.tone}`}>
+              <span>{item.name}</span>
+              <span>{item.label}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <div className="suggestion-list">
         <p className="section-label">Suggestions</p>
         {SUGGESTIONS.map((suggestion) => (

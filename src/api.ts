@@ -66,6 +66,18 @@ export function cancelJob(projectId: string, jobId: string): Promise<Project> {
   return invoke<Project>("cancel_job", { projectId, jobId });
 }
 
+export function pauseJob(projectId: string, jobId: string): Promise<Project> {
+  return invoke<Project>("pause_job", { projectId, jobId });
+}
+
+export function resumeJob(projectId: string, jobId: string): Promise<Project> {
+  return invoke<Project>("resume_job", { projectId, jobId });
+}
+
+export function retryJob(projectId: string, jobId: string): Promise<Project> {
+  return invoke<Project>("retry_job", { projectId, jobId });
+}
+
 export function submitTippy(text: string, projectId?: string): Promise<TippyReply> {
   return invoke<TippyReply>("submit_tippy", { text, projectId: projectId ?? null });
 }

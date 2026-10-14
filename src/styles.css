@@ -834,3 +834,126 @@ textarea:focus,
   justify-content: space-between;
   gap: 12px;
 }
+
+.team-board {
+  grid-column: 1 / -1;
+  margin-bottom: 16px;
+}
+
+.worker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.worker-card {
+  background: #11151d;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.worker-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.worker-card header em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.worker-card.tone-running {
+  border-color: var(--cyan);
+}
+
+.worker-card.tone-running header em,
+.worker-card.tone-waiting header strong {
+  color: var(--purple);
+}
+
+.worker-card.tone-running header strong {
+  color: var(--cyan);
+}
+
+.worker-card.tone-done header em {
+  color: #3dd68c;
+}
+
+.worker-card.tone-failed header em,
+.worker-card.tone-cancelled header em {
+  color: var(--red);
+}
+
+.worker-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.worker-detail {
+  color: var(--white) !important;
+}
+
+.worker-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.job-history {
+  margin-top: 14px;
+}
+
+.job-history ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.job-history li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) auto;
+  gap: 4px 12px;
+}
+
+.job-history em {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-style: normal;
+  font-size: 12px;
+}
+
+.tippy-activity {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tippy-activity li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.tippy-activity .tone-running {
+  color: var(--cyan);
+}
+
+.tippy-activity .tone-waiting,
+.tippy-activity .tone-paused {
+  color: var(--purple);
+}

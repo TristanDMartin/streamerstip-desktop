@@ -5,7 +5,6 @@ import type { ProjectCard } from "../types";
 interface HomeViewProps {
   projects: ProjectCard[];
   accountLabel: string;
-  multiAgentEnabled: boolean;
   onCreate: (name: string) => Promise<void>;
   onOpen: (projectId: string) => void;
   onAsk: () => void;
@@ -14,7 +13,6 @@ interface HomeViewProps {
 export function HomeView({
   projects,
   accountLabel,
-  multiAgentEnabled,
   onCreate,
   onOpen,
   onAsk,
@@ -30,11 +28,6 @@ export function HomeView({
       <button type="button" className="text-button" onClick={onAsk}>
         Ask Tippy
       </button>
-      {multiAgentEnabled ? (
-        <p className="notice">
-          Multi-agent workspace is flagged on. This build still runs one orchestrator.
-        </p>
-      ) : null}
       <ProjectList projects={projects} onOpen={onOpen} />
     </section>
   );
