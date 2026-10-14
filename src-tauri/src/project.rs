@@ -71,12 +71,53 @@ pub struct SequenceClip {
     pub end_ms: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptionCue {
+    pub caption_id: String,
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewChange {
+    pub change_id: String,
+    pub kind: String,
+    pub label: String,
+    #[serde(default)]
+    pub undone: bool,
+    #[serde(default)]
+    pub accepted: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Sequence {
     pub sequence_id: String,
     pub name: String,
     pub clips: Vec<SequenceClip>,
+    #[serde(default)]
+    pub moment_id: String,
+    #[serde(default)]
+    pub variation: String,
+    #[serde(default)]
+    pub aspect_ratio: String,
+    #[serde(default)]
+    pub caption_theme: String,
+    #[serde(default)]
+    pub export_preset: String,
+    #[serde(default)]
+    pub captions: Vec<CaptionCue>,
+    #[serde(default)]
+    pub changes: Vec<ReviewChange>,
+    #[serde(default)]
+    pub preview_path: Option<String>,
+    #[serde(default)]
+    pub source_start_ms: u64,
+    #[serde(default)]
+    pub source_end_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -97,6 +138,8 @@ pub struct ExportRecord {
     pub media_id: String,
     pub path: String,
     pub created_at: String,
+    #[serde(default)]
+    pub sequence_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -499,6 +542,30 @@ mod tests {
         value["transcript"] = serde_json::json!({});
         let legacy = parse_project_bytes(&serde_json::to_vec(&value).unwrap()).unwrap();
         assert!(legacy.transcript.segments.is_empty());
+        value["sequences"] = serde_json::json!([{
+            "sequenceId": "seq_old",
+            "name": "Assembly",
+            "clips": [{ "mediaId": "media_1", "startMs": 0, "endMs": 0 }]
+        }]);
+        value["jobs"] = serde_json::json!([{
+            "jobId": "job_old",
+            "projectId": project.project_id,
+            "type": "probe_media",
+            "agent": "media_analyst",
+            "state": "queued",
+            "progress": 0,
+            "dependencies": [],
+            "createdAt": "2026-10-13T00:00:00Z",
+            "startedAt": null,
+            "completedAt": null,
+            "error": null,
+            "mediaId": "media_1",
+            "message": ""
+        }]);
+        let opened = parse_project_bytes(&serde_json::to_vec(&value).unwrap()).unwrap();
+        assert_eq!(opened.sequences[0].variation, "");
+        assert!(opened.sequences[0].captions.is_empty());
+        assert_eq!(opened.jobs[0].subject_id, "");
     }
 
     #[test]
@@ -571,6 +638,7 @@ mod tests {
             error: None,
             media_id: "media_1".into(),
             message: "Writing proxy".into(),
+            subject_id: String::new(),
         });
         store.save_project(&project, true).unwrap();
         let recovered = store.recover_on_launch(&project.project_id).unwrap();

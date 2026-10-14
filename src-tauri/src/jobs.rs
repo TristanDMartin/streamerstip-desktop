@@ -61,6 +61,8 @@ pub struct Job {
     pub error: Option<String>,
     pub media_id: String,
     pub message: String,
+    #[serde(default)]
+    pub subject_id: String,
 }
 
 pub fn dependencies_satisfied(jobs: &[Job], job: &Job) -> bool {
@@ -103,6 +105,7 @@ mod tests {
             error: None,
             media_id: "media_1".into(),
             message: String::new(),
+            subject_id: String::new(),
         }
     }
 

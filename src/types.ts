@@ -82,10 +82,35 @@ export interface SequenceClip {
   endMs: number;
 }
 
+export interface CaptionCue {
+  captionId: string;
+  startMs: number;
+  endMs: number;
+  text: string;
+}
+
+export interface ReviewChange {
+  changeId: string;
+  kind: string;
+  label: string;
+  undone: boolean;
+  accepted: boolean;
+}
+
 export interface Sequence {
   sequenceId: string;
   name: string;
   clips: SequenceClip[];
+  momentId: string;
+  variation: string;
+  aspectRatio: string;
+  captionTheme: string;
+  exportPreset: string;
+  captions: CaptionCue[];
+  changes: ReviewChange[];
+  previewPath: string | null;
+  sourceStartMs: number;
+  sourceEndMs: number;
 }
 
 export interface ActionRecord {
@@ -102,6 +127,7 @@ export interface ExportRecord {
   mediaId: string;
   path: string;
   createdAt: string;
+  sequenceId: string;
 }
 
 export interface VersionEntry {
@@ -143,6 +169,7 @@ export interface Job {
   error: string | null;
   mediaId: string;
   message: string;
+  subjectId: string;
 }
 
 export interface Project {

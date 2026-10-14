@@ -41,6 +41,7 @@ pub struct TaskNode {
     pub action_id: String,
     pub agent: String,
     pub depends_on: Vec<String>,
+    pub subject_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,6 +76,58 @@ pub fn plan_export() -> Vec<TaskNode> {
     vec![node("export", "create_export", "media_analyst", vec![])]
 }
 
+pub fn plan_shorts(moment_ids: &[String]) -> Vec<TaskNode> {
+    moment_ids
+        .iter()
+        .enumerate()
+        .map(|(index, moment_id)| TaskNode {
+            key: format!("short-{index}"),
+            action_id: "create_short".into(),
+            agent: "clip_editor".into(),
+            depends_on: Vec::new(),
+            subject_id: moment_id.clone(),
+        })
+        .collect()
+}
+
+pub fn plan_short_followup(action_id: &str, sequence_id: &str) -> Vec<TaskNode> {
+    vec![TaskNode {
+        key: action_id.into(),
+        action_id: action_id.into(),
+        agent: "clip_editor".into(),
+        depends_on: Vec::new(),
+        subject_id: sequence_id.into(),
+    }]
+}
+
+pub fn parallel_limit() -> usize {
+    std::thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(1)
+        .clamp(1, 4)
+}
+
+pub fn runnable_batch(jobs: &[Job], limit: usize) -> Vec<usize> {
+    let runnable: Vec<usize> = jobs
+        .iter()
+        .enumerate()
+        .filter(|(_, job)| job.state.is_runnable() && dependencies_satisfied(jobs, job))
+        .map(|(index, _)| index)
+        .collect();
+    let Some(first) = runnable.first().copied() else {
+        return Vec::new();
+    };
+    if jobs[first].job_type != "create_short" {
+        return vec![first];
+    }
+    let cap = limit.max(1);
+    runnable
+        .into_iter()
+        .filter(|index| jobs[*index].job_type == "create_short")
+        .take(cap)
+        .collect()
+}
+
 pub fn plan_goal(_goal: &str) -> Result<Vec<TaskNode>, PlanError> {
     Err(PlanError::NotConnected)
 }
@@ -85,6 +138,7 @@ fn node(key: &str, action_id: &str, agent: &str, depends_on: Vec<&str>) -> TaskN
         action_id: action_id.into(),
         agent: agent.into(),
         depends_on: depends_on.into_iter().map(str::to_string).collect(),
+        subject_id: String::new(),
     }
 }
 
@@ -144,7 +198,7 @@ pub const WORKERS: &[WorkerDefinition] = &[
     WorkerDefinition {
         id: "clip_editor",
         role: "Clip Editor",
-        responsibility: "Trim and sequence tools",
+        responsibility: "Builds draft Shorts on this machine",
     },
     WorkerDefinition {
         id: "packaging_agent",
@@ -221,6 +275,16 @@ pub fn tools() -> &'static [ToolDefinition] {
             id: "scout_moments",
             engine_method: "scout_moments",
             agent: "moment_scout",
+        },
+        ToolDefinition {
+            id: "create_short",
+            engine_method: "render_short",
+            agent: "clip_editor",
+        },
+        ToolDefinition {
+            id: "export_short",
+            engine_method: "render_short",
+            agent: "clip_editor",
         },
     ]
 }
@@ -349,6 +413,7 @@ impl Orchestrator {
                 error,
                 media_id: media_id.to_string(),
                 message,
+                subject_id: node.subject_id.clone(),
             });
             created.push(job_id);
         }
@@ -463,6 +528,43 @@ mod tests {
         assert_eq!(decision, PermissionDecision::Denied);
         let (allowed, _) = authorize("create_proxy", PrivacyMode::LocalFirst);
         assert_eq!(allowed, PermissionDecision::Allowed);
+        let (short, _) = authorize("create_short", PrivacyMode::LocalFirst);
+        assert_eq!(short, PermissionDecision::Allowed);
+    }
+
+    #[test]
+    fn short_jobs_batch_up_to_the_machine_cap() {
+        fn queued(id: &str, job_type: &str) -> Job {
+            Job {
+                job_id: id.into(),
+                project_id: "proj_1".into(),
+                job_type: job_type.into(),
+                agent: "clip_editor".into(),
+                state: JobState::Queued,
+                progress: 0.0,
+                dependencies: Vec::new(),
+                created_at: now_iso(),
+                started_at: None,
+                completed_at: None,
+                error: None,
+                media_id: "media_1".into(),
+                message: String::new(),
+                subject_id: id.into(),
+            }
+        }
+        let shorts: Vec<_> = (0..6)
+            .map(|index| queued(&format!("s{index}"), "create_short"))
+            .collect();
+        assert_eq!(runnable_batch(&shorts, 4).len(), 4);
+        assert_eq!(runnable_batch(&shorts, 2).len(), 2);
+        let mut mixed = vec![queued("probe", "probe_media")];
+        mixed.extend(shorts);
+        assert_eq!(runnable_batch(&mixed, 4), vec![0]);
+        assert!(parallel_limit() >= 1 && parallel_limit() <= 4);
+        let plan = plan_shorts(&["moment_a".into(), "moment_b".into()]);
+        assert_eq!(plan.len(), 2);
+        assert!(plan.iter().all(|node| node.depends_on.is_empty()));
+        assert_eq!(plan[1].subject_id, "moment_b");
     }
 
     #[test]
@@ -492,6 +594,7 @@ mod tests {
             error: None,
             media_id: "media_1".into(),
             message: String::new(),
+            subject_id: String::new(),
         };
         let mut running = queued.clone();
         running.job_id = "job_r".into();
@@ -519,6 +622,7 @@ mod tests {
             error: None,
             media_id: "media_1".into(),
             message: "Writing proxy".into(),
+            subject_id: String::new(),
         };
         assert!(event_is_small(&BusEvent::job(&project.project_id, &job)));
     }

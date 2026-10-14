@@ -7,7 +7,7 @@ interface JobBarProps {
 }
 
 export function JobBar({ jobs, onCancel }: JobBarProps) {
-  const visible = [...jobs].reverse().slice(0, 8);
+  const visible = jobs.slice(0, 8);
   return (
     <footer className="job-bar" data-testid="job-bar" role="status">
       <span className="job-bar-label">Processing</span>

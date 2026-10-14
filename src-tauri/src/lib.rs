@@ -12,6 +12,7 @@ mod project;
 mod runtime;
 mod scout;
 mod service;
+mod shorts;
 mod speech;
 
 use std::collections::HashMap;
@@ -130,11 +131,67 @@ fn cancel_job(
 
 #[tauri::command]
 fn submit_tippy(
+    app: AppHandle,
     state: State<'_, AppState>,
     text: String,
     project_id: Option<String>,
 ) -> TippyReply {
-    service::ask_tippy(state.inner(), project_id.as_deref(), &text)
+    let reply = service::ask_tippy(state.inner(), project_id.as_deref(), &text);
+    if reply.handled {
+        if let Some(project_id) = project_id.as_deref() {
+            kick(&app, project_id);
+        }
+    }
+    reply
+}
+
+#[tauri::command]
+fn create_short(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_id: String,
+    moment_id: String,
+) -> Result<Project, String> {
+    let project = service::queue_short(state.inner(), &project_id, &moment_id)
+        .map_err(|err| err.to_string())?;
+    kick(&app, &project_id);
+    Ok(project)
+}
+
+#[tauri::command]
+fn undo_short_change(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_id: String,
+    sequence_id: String,
+) -> Result<Project, String> {
+    let project = service::undo_short_change(state.inner(), &project_id, &sequence_id)
+        .map_err(|err| err.to_string())?;
+    kick(&app, &project_id);
+    Ok(project)
+}
+
+#[tauri::command]
+fn accept_short_changes(
+    state: State<'_, AppState>,
+    project_id: String,
+    sequence_id: String,
+) -> Result<Project, String> {
+    service::accept_short_changes(state.inner(), &project_id, &sequence_id)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn export_short(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_id: String,
+    sequence_id: String,
+) -> Result<Project, String> {
+    let project = service::export_short(state.inner(), &project_id, &sequence_id)
+        .map_err(|err| err.to_string())?;
+    kick(&app, &project_id);
+    Ok(project)
 }
 
 fn kick(app: &AppHandle, project_id: &str) {
@@ -211,7 +268,11 @@ pub fn run() {
             import_video,
             export_video,
             cancel_job,
-            submit_tippy
+            submit_tippy,
+            create_short,
+            undo_short_change,
+            accept_short_changes,
+            export_short
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tippy Desktop");

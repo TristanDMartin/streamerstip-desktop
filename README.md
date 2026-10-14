@@ -1,6 +1,6 @@
 # Tippy Desktop
 
-Phase 0 through Phase 3 of Tippy Desktop: a local Tauri shell for creating a project, importing video, reading the media, and ranking moments on this machine.
+Phase 0 through Phase 4 of Tippy Desktop: a local Tauri shell for creating a project, importing video, ranking moments, and turning a moment into a draft Short on this machine.
 
 This repository is the isolated desktop app. It does not change the StreamersTip website or the Flutter app.
 
@@ -16,8 +16,12 @@ This repository is the isolated desktop app. It does not change the StreamersTip
 - Scene detection, silence detection, thumbnails, and a searchable local transcript
 - A local Moment Scout shortlist: time range, category, explanation, preview, and component scores for hook, emotion, clarity, payoff, pacing, and standalone context
 - A Tippy panel that answers “Where did I talk about GTA VI?” from the transcript, and “Find my best clips” from that shortlist
+- Draft Shorts from a ranked moment: trim, silence removal, a 9:16 center crop, captions, the Bold caption theme, and the Short 9:16 export preset
+- Two named sequences per moment, Original and Tippy / category. The creator picks one. They are not merged
+- Review Changes, an operation log in creator language, with Undo and Accept all
+- “Create 4 Shorts” runs child jobs with visible progress, capped by this machine
 
-Clip creation, publishing, Planner, the full editor, and live model calls are not in this build.
+Publishing, Planner, the multi-agent workspace, the full editor, OBS, and live model calls are not in this build.
 
 ## Account seam
 
@@ -43,7 +47,9 @@ sudo apt install gstreamer1.0-libav
 
 ## Media intelligence
 
-After import, Tippy detects scenes and silence locally, transcribes speech on this machine, and ranks a shortlist of moments from that transcript. Asking “Where did I talk about GTA VI?” returns a timestamp. Asking “Find my best clips” jumps to the first moment. There is no single viral score and no cloud model. Clip generation and publishing stay out of this phase.
+After import, Tippy detects scenes and silence locally, transcribes speech on this machine, and ranks a shortlist of moments from that transcript. Asking “Where did I talk about GTA VI?” returns a timestamp. Asking “Find my best clips” jumps to the first moment. There is no single viral score and no cloud model.
+
+Create Short, or “Create 4 Shorts,” builds a draft from a ranked moment on this machine. Tippy trims to the moment, removes detected silence, center-crops to 9:16 when face tracking is not available, and adds captions the creator can read. The Bold theme and the Short 9:16 preset are listed in Review Changes. Undo reverses the latest change. Export writes a playable MPEG-4 and AAC file. Child Short jobs run together up to the machine’s parallelism, and never more than four at once. Reframing a subject stays refused while privacy is Local First.
 
 Local transcription uses `whisper-cli` from whisper.cpp. Tippy looks for that binary on `PATH`, then in `~/.local/bin`. It looks for a ggml model in `TIPPY_WHISPER_MODEL`, then `~/.local/share/tippy/ggml-tiny.en.bin`, then `/usr/local/share/tippy/ggml-tiny.en.bin`. Without that binary and model, the transcript job fails closed and says so. Scene detection, silence detection, and the rest of the import still finish.
 
