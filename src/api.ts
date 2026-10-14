@@ -40,6 +40,28 @@ export function exportVideo(
   return invoke<Project>("export_video", { projectId, mediaId });
 }
 
+export function createShort(projectId: string, momentId: string): Promise<Project> {
+  return invoke<Project>("create_short", { projectId, momentId });
+}
+
+export function undoShortChange(
+  projectId: string,
+  sequenceId: string,
+): Promise<Project> {
+  return invoke<Project>("undo_short_change", { projectId, sequenceId });
+}
+
+export function acceptShortChanges(
+  projectId: string,
+  sequenceId: string,
+): Promise<Project> {
+  return invoke<Project>("accept_short_changes", { projectId, sequenceId });
+}
+
+export function exportShort(projectId: string, sequenceId: string): Promise<Project> {
+  return invoke<Project>("export_short", { projectId, sequenceId });
+}
+
 export function cancelJob(projectId: string, jobId: string): Promise<Project> {
   return invoke<Project>("cancel_job", { projectId, jobId });
 }

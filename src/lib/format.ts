@@ -51,6 +51,12 @@ export function jobLabel(jobType: string): string {
       return "Transcript";
     case "scout_moments":
       return "Moments";
+    case "create_short":
+      return "Short";
+    case "refresh_short":
+      return "Short";
+    case "export_short":
+      return "Export Short";
     case "create_export":
       return "Export";
     default:

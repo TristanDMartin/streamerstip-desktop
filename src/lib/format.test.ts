@@ -28,6 +28,7 @@ describe("job phases", () => {
     expect(formatDuration(125000)).toBe("2:05");
     expect(formatDuration(8072000)).toBe("2:14:32");
     expect(jobLabel("scout_moments")).toBe("Moments");
+    expect(jobLabel("create_short")).toBe("Short");
     expect(formatBytes(1536)).toBe("1.5 KB");
   });
 });

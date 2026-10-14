@@ -168,7 +168,23 @@ pub fn workspace(state: &AppState) -> DesktopResult<Workspace> {
         }
     }
     projects.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
-    jobs.sort_by(|left, right| right.job_id.cmp(&left.job_id));
+    jobs.sort_by(|left, right| {
+        let rank = |job: &JobListItem| {
+            if !job.state.is_terminal() {
+                0
+            } else if matches!(
+                job.job_type.as_str(),
+                "create_short" | "refresh_short" | "export_short"
+            ) {
+                1
+            } else {
+                2
+            }
+        };
+        rank(left)
+            .cmp(&rank(right))
+            .then_with(|| right.job_id.cmp(&left.job_id))
+    });
     Ok(Workspace { projects, jobs })
 }
 
@@ -221,6 +237,16 @@ pub fn import_video(state: &AppState, project_id: &str, source: &Path) -> Deskto
             start_ms: 0,
             end_ms: 0,
         }],
+        moment_id: String::new(),
+        variation: String::new(),
+        aspect_ratio: String::new(),
+        caption_theme: String::new(),
+        export_preset: String::new(),
+        captions: Vec::new(),
+        changes: Vec::new(),
+        preview_path: None,
+        source_start_ms: 0,
+        source_end_ms: 0,
     });
     record_version(&mut project, "Imported video");
     Orchestrator.enqueue(&mut project, &media_id, &crate::runtime::plan_import());
@@ -258,7 +284,11 @@ pub fn ask_tippy(state: &AppState, project_id: Option<&str>, text: &str) -> crat
         "tippy composer submitted; no model was called",
     );
     if let Some(project_id) = project_id {
-        if let Ok(project) = lock(&state.store).load_project(project_id) {
+        let loaded = {
+            let store = lock(&state.store);
+            store.load_project(project_id)
+        };
+        if let Ok(project) = loaded {
             if let Some((message, hits)) =
                 crate::speech::answer_question(&project.transcript.segments, text)
             {
@@ -280,6 +310,29 @@ pub fn ask_tippy(state: &AppState, project_id: Option<&str>, text: &str) -> crat
                             text: hit.text,
                         })
                         .collect(),
+                };
+            }
+            if crate::shorts::asks_for_four_shorts(text) {
+                return match queue_four_shorts(state, project_id) {
+                    Ok((_project, message)) => {
+                        log_line(
+                            &state.log_path,
+                            "info",
+                            "queued local shorts; no model was called",
+                        );
+                        crate::ai::TippyReply {
+                            connected: false,
+                            handled: true,
+                            message,
+                            hits: Vec::new(),
+                        }
+                    }
+                    Err(err) => crate::ai::TippyReply {
+                        connected: false,
+                        handled: true,
+                        message: err.to_string(),
+                        hits: Vec::new(),
+                    },
                 };
             }
             if let Some((message, start_ms, end_ms, moment_id)) =
@@ -340,6 +393,7 @@ struct Claimed {
     job_id: String,
     job_type: String,
     media_id: String,
+    subject_id: String,
     input: PathBuf,
     duration_ms: u64,
     has_audio: bool,
@@ -352,78 +406,100 @@ pub fn run_pending(
     on_update: &mut dyn FnMut(&Project, &BusEvent),
 ) -> Result<(), String> {
     loop {
-        let claimed = match claim_next(state, project_id) {
-            Ok(Some(claimed)) => claimed,
-            Ok(None) => break,
+        let batch = match claim_batch(state, project_id) {
+            Ok(batch) if batch.is_empty() => break,
+            Ok(batch) => batch,
             Err(err) => return Err(err.to_string()),
         };
-        publish(state, project_id, &claimed.job_id, on_update);
-        let started = Instant::now();
-        let outcome = crate::media::with_cancel(claimed.cancel.clone(), || {
-            execute(state, project_id, &claimed, on_update)
-        });
-        finalize(
-            state,
-            project_id,
-            &claimed,
-            outcome,
-            started.elapsed().as_secs_f64() * 1000.0,
-        );
-        publish(state, project_id, &claimed.job_id, on_update);
+        for claimed in &batch {
+            publish(state, project_id, &claimed.job_id, on_update);
+        }
+        let finished = if batch.len() == 1 {
+            let claimed = &batch[0];
+            let started = Instant::now();
+            let outcome = crate::media::with_cancel(claimed.cancel.clone(), || {
+                execute(state, project_id, claimed, on_update)
+            });
+            vec![(outcome, started.elapsed().as_secs_f64() * 1000.0)]
+        } else {
+            std::thread::scope(|scope| {
+                let mut handles = Vec::new();
+                for claimed in &batch {
+                    handles.push(scope.spawn(|| {
+                        let started = Instant::now();
+                        let outcome = crate::media::with_cancel(claimed.cancel.clone(), || {
+                            execute(state, project_id, claimed, &mut |_project, _event| {})
+                        });
+                        (outcome, started.elapsed().as_secs_f64() * 1000.0)
+                    }));
+                }
+                handles
+                    .into_iter()
+                    .map(|handle| {
+                        handle
+                            .join()
+                            .unwrap_or_else(|_| (Err("short worker stopped".into()), 0.0))
+                    })
+                    .collect()
+            })
+        };
+        for (claimed, (outcome, elapsed_ms)) in batch.iter().zip(finished) {
+            finalize(state, project_id, claimed, outcome, elapsed_ms);
+            publish(state, project_id, &claimed.job_id, on_update);
+        }
     }
     Ok(())
 }
 
-fn claim_next(state: &AppState, project_id: &str) -> DesktopResult<Option<Claimed>> {
+fn claim_batch(state: &AppState, project_id: &str) -> DesktopResult<Vec<Claimed>> {
     let store = lock(&state.store);
     let mut project = store.load_project(project_id)?;
     let changed = refresh_dependency_states(&mut project.jobs);
-    let Some(index) = crate::runtime::next_runnable(&project.jobs) else {
+    let indexes = crate::runtime::runnable_batch(&project.jobs, crate::runtime::parallel_limit());
+    if indexes.is_empty() {
         if changed {
             project.touch();
             store.save_project(&project, true)?;
         }
-        return Ok(None);
-    };
-    let media_id = project.jobs[index].media_id.clone();
-    let job_id = project.jobs[index].job_id.clone();
-    let job_type = project.jobs[index].job_type.clone();
-    let media = project.media.iter().find(|item| item.media_id == media_id);
-    let input = media
-        .map(|item| PathBuf::from(&item.original_path))
-        .unwrap_or_default();
-    let duration_ms = media
-        .and_then(|item| item.probe.as_ref())
-        .map(|probe| probe.duration_ms)
-        .unwrap_or(0);
-    let has_audio = media
-        .and_then(|item| item.probe.as_ref())
-        .map(ProbeInfo::has_audio)
-        .unwrap_or(true);
-    let cancel = Arc::new(AtomicBool::new(false));
-    lock(&state.cancels).insert(job_id.clone(), cancel.clone());
-    if cancel.load(Ordering::Relaxed) {
-        project.jobs[index].state = JobState::Cancelled;
-        project.jobs[index].message = "Cancelled".into();
-        project.jobs[index].completed_at = Some(now_iso());
-        project.touch();
-        store.save_project(&project, true)?;
-        return Ok(None);
+        return Ok(Vec::new());
     }
-    project.jobs[index].state = JobState::Running;
-    project.jobs[index].started_at = Some(now_iso());
-    project.jobs[index].message = running_message(&job_type).into();
+    let mut claimed = Vec::new();
+    for index in indexes {
+        let media_id = project.jobs[index].media_id.clone();
+        let job_id = project.jobs[index].job_id.clone();
+        let job_type = project.jobs[index].job_type.clone();
+        let subject_id = project.jobs[index].subject_id.clone();
+        let media = project.media.iter().find(|item| item.media_id == media_id);
+        let input = media
+            .map(|item| PathBuf::from(&item.original_path))
+            .unwrap_or_default();
+        let duration_ms = media
+            .and_then(|item| item.probe.as_ref())
+            .map(|probe| probe.duration_ms)
+            .unwrap_or(0);
+        let has_audio = media
+            .and_then(|item| item.probe.as_ref())
+            .map(ProbeInfo::has_audio)
+            .unwrap_or(true);
+        let cancel = Arc::new(AtomicBool::new(false));
+        lock(&state.cancels).insert(job_id.clone(), cancel.clone());
+        project.jobs[index].state = JobState::Running;
+        project.jobs[index].started_at = Some(now_iso());
+        project.jobs[index].message = running_message(&job_type).into();
+        claimed.push(Claimed {
+            job_id,
+            job_type,
+            media_id,
+            subject_id,
+            input,
+            duration_ms,
+            has_audio,
+            cancel,
+        });
+    }
     project.touch();
     store.save_project(&project, true)?;
-    Ok(Some(Claimed {
-        job_id,
-        job_type,
-        media_id,
-        input,
-        duration_ms,
-        has_audio,
-        cancel,
-    }))
+    Ok(claimed)
 }
 
 fn execute(
@@ -581,6 +657,39 @@ fn execute(
             }
             Ok(Execution::Moments(moments))
         }
+        "create_short" => {
+            let built = build_short_sequences(state, project_id, &claimed.subject_id)?;
+            let mut tippy = built.tippy;
+            let output = folder.join(format!("short-{}.mp4", tippy.sequence_id));
+            render_current(state, claimed, &tippy, &output, &mut report)?;
+            tippy.preview_path = Some(output.display().to_string());
+            report(1.0);
+            Ok(Execution::Shorts(vec![built.original, tippy]))
+        }
+        "refresh_short" => {
+            let sequence = load_sequence(state, project_id, &claimed.subject_id)?;
+            let output = folder.join(format!("short-{}.mp4", sequence.sequence_id));
+            render_current(state, claimed, &sequence, &output, &mut report)?;
+            report(1.0);
+            Ok(Execution::Preview {
+                sequence_id: sequence.sequence_id,
+                path: output,
+            })
+        }
+        "export_short" => {
+            let sequence = load_sequence(state, project_id, &claimed.subject_id)?;
+            let output = root
+                .join("projects")
+                .join(project_id)
+                .join("derived")
+                .join("exports")
+                .join(format!("{}.mp4", sequence.sequence_id));
+            render_current(state, claimed, &sequence, &output, &mut report)?;
+            Ok(Execution::Export {
+                path: output,
+                sequence_id: sequence.sequence_id,
+            })
+        }
         "create_export" => {
             let output = root
                 .join("projects")
@@ -598,7 +707,10 @@ fn execute(
                     &mut report,
                 )
                 .map_err(|err| err.to_string())?;
-            Ok(Execution::Export(output))
+            Ok(Execution::Export {
+                path: output,
+                sequence_id: String::new(),
+            })
         }
         other => Err(format!(
             "{other} is registered but not running in this phase"
@@ -615,7 +727,9 @@ enum Execution {
     Silences(Vec<crate::media::SilenceSpan>),
     Transcript(Vec<crate::project::TranscriptSegment>),
     Moments(Vec<crate::project::Moment>),
-    Export(PathBuf),
+    Shorts(Vec<Sequence>),
+    Preview { sequence_id: String, path: PathBuf },
+    Export { path: PathBuf, sequence_id: String },
 }
 
 struct ScoutMaterial {
@@ -692,6 +806,7 @@ fn finalize(
     let cancelled = claimed.cancel.load(Ordering::Relaxed)
         || matches!(outcome.as_ref(), Err(message) if message == "cancelled");
     let transcribed = !cancelled && claimed.job_type == "transcribe_media" && outcome.is_ok();
+    let made_short = !cancelled && claimed.job_type == "create_short" && outcome.is_ok();
     let moment_count = match outcome.as_ref() {
         Ok(Execution::Moments(moments)) if !cancelled => moments.len(),
         _ => 0,
@@ -730,6 +845,12 @@ fn finalize(
                 }
                 if claimed.job_type == "scout_moments" {
                     record_version(&mut project, "Scouted moments");
+                }
+                if claimed.job_type == "create_short" {
+                    record_version(&mut project, "Created a Short");
+                }
+                if claimed.job_type == "export_short" {
+                    record_version(&mut project, "Exported a Short");
                 }
             }
             Err(message) => {
@@ -776,6 +897,14 @@ fn finalize(
                 at: now_iso(),
             });
         }
+        if made_short {
+            let _ = meter.record(CostEntry {
+                project_id: project_id.into(),
+                kind: "shorts".into(),
+                amount: 1.0,
+                at: now_iso(),
+            });
+        }
     }
     log_line(
         &state.log_path,
@@ -797,7 +926,7 @@ fn apply_execution(project: &mut Project, media_id: &str, execution: Execution) 
             }
             for sequence in &mut project.sequences {
                 for clip in &mut sequence.clips {
-                    if clip.media_id == media_id {
+                    if clip.media_id == media_id && clip.end_ms == 0 {
                         clip.end_ms = duration;
                     }
                 }
@@ -857,12 +986,36 @@ fn apply_execution(project: &mut Project, media_id: &str, execution: Execution) 
             project.moments.retain(|moment| moment.media_id != media_id);
             project.moments.extend(moments);
         }
-        Execution::Export(path) => {
+        Execution::Shorts(sequences) => {
+            let moment_ids: Vec<String> = sequences
+                .iter()
+                .map(|sequence| sequence.moment_id.clone())
+                .filter(|moment_id| !moment_id.is_empty())
+                .collect();
+            project.sequences.retain(|sequence| {
+                sequence.moment_id.is_empty()
+                    || !moment_ids
+                        .iter()
+                        .any(|moment_id| moment_id == &sequence.moment_id)
+            });
+            project.sequences.extend(sequences);
+        }
+        Execution::Preview { sequence_id, path } => {
+            if let Some(sequence) = project
+                .sequences
+                .iter_mut()
+                .find(|sequence| sequence.sequence_id == sequence_id)
+            {
+                sequence.preview_path = Some(path.display().to_string());
+            }
+        }
+        Execution::Export { path, sequence_id } => {
             project.exports.push(ExportRecord {
                 export_id: new_id("exp"),
                 media_id: media_id.into(),
                 path: path.display().to_string(),
                 created_at: now_iso(),
+                sequence_id,
             });
         }
     }
@@ -898,6 +1051,9 @@ fn running_message(job_type: &str) -> &'static str {
         "detect_silence" => "Detecting silence",
         "transcribe_media" => "Transcribing",
         "scout_moments" => "Finding moments",
+        "create_short" => "Making a Short",
+        "refresh_short" => "Updating the Short",
+        "export_short" => "Exporting a Short",
         "create_export" => "Exporting",
         _ => "Working",
     }
@@ -917,6 +1073,268 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 pub fn enqueue_plan(project: &mut Project, media_id: &str, nodes: &[TaskNode]) -> Vec<String> {
     Orchestrator.enqueue(project, media_id, nodes)
+}
+
+pub fn queue_short(state: &AppState, project_id: &str, moment_id: &str) -> DesktopResult<Project> {
+    let store = lock(&state.store);
+    let mut project = store.load_project(project_id)?;
+    let moment = project
+        .moments
+        .iter()
+        .find(|moment| moment.moment_id == moment_id)
+        .cloned()
+        .ok_or_else(|| DesktopError::Message("that moment is not in the project".into()))?;
+    let already = project.jobs.iter().any(|job| {
+        job.job_type == "create_short" && job.subject_id == moment_id && !job.state.is_terminal()
+    });
+    if !already {
+        let plan = crate::runtime::plan_shorts(&[moment_id.to_string()]);
+        Orchestrator.enqueue(&mut project, &moment.media_id, &plan);
+        store.save_project(&project, true)?;
+    }
+    Ok(project)
+}
+
+pub fn queue_four_shorts(state: &AppState, project_id: &str) -> DesktopResult<(Project, String)> {
+    let store = lock(&state.store);
+    let mut project = store.load_project(project_id)?;
+    if project.moments.is_empty() {
+        return Ok((project, "Scout moments before creating Shorts.".into()));
+    }
+    let mut chosen: Vec<(String, String)> = Vec::new();
+    for moment in &project.moments {
+        if chosen.len() == 4 {
+            break;
+        }
+        let has_tippy = project.sequences.iter().any(|sequence| {
+            sequence.moment_id == moment.moment_id
+                && sequence.variation == crate::shorts::VARIATION_TIPPY
+        });
+        let queued = project.jobs.iter().any(|job| {
+            job.job_type == "create_short"
+                && job.subject_id == moment.moment_id
+                && !job.state.is_terminal()
+        });
+        if has_tippy || queued {
+            continue;
+        }
+        chosen.push((moment.moment_id.clone(), moment.media_id.clone()));
+    }
+    if chosen.is_empty() {
+        return Ok((project, "Those moments already have Shorts.".into()));
+    }
+    let mut by_media: Vec<(String, Vec<String>)> = Vec::new();
+    for (moment_id, media_id) in chosen {
+        if let Some((_, ids)) = by_media.iter_mut().find(|(id, _)| id == &media_id) {
+            ids.push(moment_id);
+        } else {
+            by_media.push((media_id, vec![moment_id]));
+        }
+    }
+    let count: usize = by_media.iter().map(|(_, ids)| ids.len()).sum();
+    for (media_id, ids) in &by_media {
+        let plan = crate::runtime::plan_shorts(ids);
+        Orchestrator.enqueue(&mut project, media_id, &plan);
+    }
+    store.save_project(&project, true)?;
+    let noun = if count == 1 { "Short" } else { "Shorts" };
+    Ok((project, format!("Tippy is making {count} {noun}.")))
+}
+
+pub fn undo_short_change(
+    state: &AppState,
+    project_id: &str,
+    sequence_id: &str,
+) -> DesktopResult<Project> {
+    let store = lock(&state.store);
+    let mut project = store.load_project(project_id)?;
+    let Some(sequence) = project
+        .sequences
+        .iter_mut()
+        .find(|sequence| sequence.sequence_id == sequence_id)
+    else {
+        return Err(DesktopError::Message(
+            "that Short is not in the project".into(),
+        ));
+    };
+    if crate::shorts::undo_last(sequence).is_none() {
+        return Err(DesktopError::Message(
+            "There is nothing left to undo.".into(),
+        ));
+    }
+    let variation = sequence.variation.clone();
+    let media_id = sequence
+        .clips
+        .first()
+        .map(|clip| clip.media_id.clone())
+        .unwrap_or_default();
+    record_version(&mut project, "Undid a change");
+    if variation == crate::shorts::VARIATION_TIPPY && !media_id.is_empty() {
+        let plan = crate::runtime::plan_short_followup("refresh_short", sequence_id);
+        Orchestrator.enqueue(&mut project, &media_id, &plan);
+    }
+    project.touch();
+    store.save_project(&project, true)?;
+    Ok(project)
+}
+
+pub fn accept_short_changes(
+    state: &AppState,
+    project_id: &str,
+    sequence_id: &str,
+) -> DesktopResult<Project> {
+    let store = lock(&state.store);
+    let mut project = store.load_project(project_id)?;
+    let Some(sequence) = project
+        .sequences
+        .iter_mut()
+        .find(|sequence| sequence.sequence_id == sequence_id)
+    else {
+        return Err(DesktopError::Message(
+            "that Short is not in the project".into(),
+        ));
+    };
+    crate::shorts::accept_all(sequence);
+    record_version(&mut project, "Accepted the changes");
+    project.touch();
+    store.save_project(&project, true)?;
+    Ok(project)
+}
+
+pub fn export_short(
+    state: &AppState,
+    project_id: &str,
+    sequence_id: &str,
+) -> DesktopResult<Project> {
+    let store = lock(&state.store);
+    let mut project = store.load_project(project_id)?;
+    let sequence = project
+        .sequences
+        .iter()
+        .find(|sequence| sequence.sequence_id == sequence_id)
+        .ok_or_else(|| DesktopError::Message("that Short is not in the project".into()))?;
+    let media_id = sequence
+        .clips
+        .first()
+        .map(|clip| clip.media_id.clone())
+        .unwrap_or_default();
+    if media_id.is_empty() {
+        return Err(DesktopError::Message(
+            "this Short has no picture yet".into(),
+        ));
+    }
+    let already = project.jobs.iter().any(|job| {
+        job.job_type == "export_short" && job.subject_id == sequence_id && !job.state.is_terminal()
+    });
+    if !already {
+        let plan = crate::runtime::plan_short_followup("export_short", sequence_id);
+        Orchestrator.enqueue(&mut project, &media_id, &plan);
+        store.save_project(&project, true)?;
+    }
+    Ok(project)
+}
+
+struct BuiltShorts {
+    original: Sequence,
+    tippy: Sequence,
+}
+
+fn build_short_sequences(
+    state: &AppState,
+    project_id: &str,
+    moment_id: &str,
+) -> Result<BuiltShorts, String> {
+    let store = lock(&state.store);
+    let project = store
+        .load_project(project_id)
+        .map_err(|err| err.to_string())?;
+    let rank = project
+        .moments
+        .iter()
+        .position(|moment| moment.moment_id == moment_id)
+        .ok_or_else(|| "that moment is not in the project".to_string())?
+        + 1;
+    let moment = project
+        .moments
+        .iter()
+        .find(|moment| moment.moment_id == moment_id)
+        .cloned()
+        .ok_or_else(|| "that moment is not in the project".to_string())?;
+    let silences = project
+        .media
+        .iter()
+        .find(|media| media.media_id == moment.media_id)
+        .map(|media| media.silences.clone())
+        .unwrap_or_default();
+    let segments = project.transcript.segments.clone();
+    drop(store);
+    let (original, tippy) = crate::shorts::draft_variations(crate::shorts::DraftInput {
+        rank,
+        moment: &moment,
+        silences: &silences,
+        segments: &segments,
+    });
+    Ok(BuiltShorts { original, tippy })
+}
+
+fn load_sequence(
+    state: &AppState,
+    project_id: &str,
+    sequence_id: &str,
+) -> Result<Sequence, String> {
+    let store = lock(&state.store);
+    let project = store
+        .load_project(project_id)
+        .map_err(|err| err.to_string())?;
+    project
+        .sequences
+        .iter()
+        .find(|sequence| sequence.sequence_id == sequence_id)
+        .cloned()
+        .ok_or_else(|| "that Short is not in the project".to_string())
+}
+
+fn render_current(
+    state: &AppState,
+    claimed: &Claimed,
+    sequence: &Sequence,
+    output: &Path,
+    report: &mut dyn FnMut(f64),
+) -> Result<(), String> {
+    let segments: Vec<crate::media::RenderSegment> = sequence
+        .clips
+        .iter()
+        .filter(|clip| clip.end_ms > clip.start_ms)
+        .map(|clip| crate::media::RenderSegment {
+            path: claimed.input.clone(),
+            start_ms: clip.start_ms,
+            end_ms: clip.end_ms,
+        })
+        .collect();
+    if segments.is_empty() {
+        return Err("this Short has no picture yet".into());
+    }
+    let captions: Vec<crate::media::ShortCaption> = sequence
+        .captions
+        .iter()
+        .map(|caption| crate::media::ShortCaption {
+            start_ms: caption.start_ms,
+            end_ms: caption.end_ms,
+            text: caption.text.clone(),
+        })
+        .collect();
+    let vertical = sequence.aspect_ratio == crate::shorts::ASPECT_VERTICAL;
+    state
+        .engine
+        .render_short(
+            &segments,
+            &captions,
+            vertical,
+            output,
+            claimed.has_audio,
+            report,
+        )
+        .map_err(|err| err.to_string())
 }
 
 #[cfg(test)]
@@ -993,6 +1411,23 @@ mod tests {
             _has_audio: bool,
         ) -> Result<(), MediaError> {
             std::fs::write(output, b"sequence").map_err(|err| MediaError::Message(err.to_string()))
+        }
+
+        fn render_short(
+            &self,
+            _segments: &[crate::media::RenderSegment],
+            _captions: &[crate::media::ShortCaption],
+            _vertical: bool,
+            output: &Path,
+            _has_audio: bool,
+            progress: &mut dyn FnMut(f64),
+        ) -> Result<(), MediaError> {
+            if let Some(parent) = output.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(output, b"short").map_err(|err| MediaError::Message(err.to_string()))?;
+            progress(1.0);
+            Ok(())
         }
 
         fn create_thumbnail(
@@ -1159,6 +1594,93 @@ mod tests {
         assert_eq!(again.name, "Evening stream");
         assert_eq!(again.media.len(), 1);
         assert_eq!(again.owner_id, reopened.account.owner_id);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn create_four_shorts_stays_local_and_can_be_undone() {
+        let (root, state) = state();
+        let source = root.join("clip.mp4");
+        std::fs::write(&source, b"original-bytes").unwrap();
+        let created = create_project(&state, "Shorts").unwrap();
+        import_video(&state, &created.project_id, &source).unwrap();
+        run_pending(&state, &created.project_id, &mut |_, _| {}).unwrap();
+        let reply = ask_tippy(&state, Some(&created.project_id), "Create 4 Shorts");
+        assert!(reply.handled);
+        assert!(!reply.connected);
+        assert_eq!(reply.message, "Tippy is making 1 Short.");
+        let queued = open_project(&state, &created.project_id).unwrap();
+        let short_jobs: Vec<_> = queued
+            .jobs
+            .iter()
+            .filter(|job| job.job_type == "create_short")
+            .collect();
+        assert_eq!(short_jobs.len(), 1);
+        assert_eq!(short_jobs[0].subject_id, queued.moments[0].moment_id);
+        assert_eq!(short_jobs[0].agent, "clip_editor");
+        run_pending(&state, &created.project_id, &mut |_, _| {}).unwrap();
+        let project = open_project(&state, &created.project_id).unwrap();
+        let original = project
+            .sequences
+            .iter()
+            .find(|sequence| sequence.variation == "original")
+            .unwrap();
+        let tippy = project
+            .sequences
+            .iter()
+            .find(|sequence| sequence.variation == "tippy")
+            .unwrap();
+        assert_ne!(original.sequence_id, tippy.sequence_id);
+        assert_eq!(original.clips.len(), 1);
+        assert_eq!(tippy.aspect_ratio, "9:16");
+        assert_eq!(tippy.caption_theme, "Bold");
+        assert_eq!(tippy.export_preset, "Short 9:16");
+        assert!(!tippy.captions.is_empty());
+        assert!(tippy.preview_path.as_ref().unwrap().ends_with(".mp4"));
+        assert!(tippy
+            .changes
+            .iter()
+            .all(|change| !change.label.to_lowercase().contains("viral")));
+        assert!(tippy
+            .changes
+            .iter()
+            .any(|change| change.label.contains("9:16")));
+        assert!(project
+            .sequences
+            .iter()
+            .any(|sequence| sequence.name == "Assembly"));
+        let again = ask_tippy(&state, Some(&created.project_id), "Create 4 Shorts");
+        assert_eq!(again.message, "Those moments already have Shorts.");
+        let undone = undo_short_change(&state, &created.project_id, &tippy.sequence_id).unwrap();
+        let tippy = undone
+            .sequences
+            .iter()
+            .find(|sequence| sequence.variation == "tippy")
+            .unwrap();
+        assert!(tippy.export_preset.is_empty());
+        assert!(undone
+            .jobs
+            .iter()
+            .any(|job| job.job_type == "refresh_short"));
+        run_pending(&state, &created.project_id, &mut |_, _| {}).unwrap();
+        accept_short_changes(&state, &created.project_id, &tippy.sequence_id).unwrap();
+        export_short(&state, &created.project_id, &tippy.sequence_id).unwrap();
+        run_pending(&state, &created.project_id, &mut |_, _| {}).unwrap();
+        let exported = open_project(&state, &created.project_id).unwrap();
+        assert!(exported
+            .exports
+            .iter()
+            .any(|item| item.sequence_id == tippy.sequence_id));
+        assert!(exported
+            .tippy_context
+            .versions
+            .iter()
+            .any(|version| version.label == "Created a Short"));
+        assert!(exported
+            .tippy_context
+            .versions
+            .iter()
+            .any(|version| version.label == "Undid a change"));
         let _ = std::fs::remove_dir_all(root);
     }
 

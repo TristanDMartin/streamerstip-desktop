@@ -3,6 +3,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   cancelJob,
   createProject,
+  acceptShortChanges,
+  createShort,
+  exportShort,
   exportVideo,
   getAppMeta,
   importVideo,
@@ -11,6 +14,7 @@ import {
   openProject,
   pickVideo,
   submitTippy,
+  undoShortChange,
 } from "./api";
 import { JobBar } from "./components/JobBar";
 import {
@@ -181,6 +185,48 @@ export function App() {
     await refreshWorkspace();
   }
 
+  async function handleCreateShort(momentId: string) {
+    if (!project) {
+      return;
+    }
+    setError(null);
+    const projectId = project.projectId;
+    await createShort(projectId, momentId);
+    await refreshOpenProject(projectId);
+    await refreshWorkspace();
+  }
+
+  async function handleUndoShort(sequenceId: string) {
+    if (!project) {
+      return;
+    }
+    setError(null);
+    const projectId = project.projectId;
+    const next = await undoShortChange(projectId, sequenceId);
+    setProject(next);
+    await refreshWorkspace();
+  }
+
+  async function handleAcceptShort(sequenceId: string) {
+    if (!project) {
+      return;
+    }
+    setError(null);
+    const next = await acceptShortChanges(project.projectId, sequenceId);
+    setProject(next);
+  }
+
+  async function handleExportShort(sequenceId: string) {
+    if (!project) {
+      return;
+    }
+    setError(null);
+    const projectId = project.projectId;
+    await exportShort(projectId, sequenceId);
+    await refreshOpenProject(projectId);
+    await refreshWorkspace();
+  }
+
   async function handleCancel(job: JobListItem) {
     const next = await cancelJob(job.projectId, job.jobId);
     if (project?.projectId === job.projectId) {
@@ -271,6 +317,10 @@ export function App() {
             onSeek={requestSeek}
             onImport={handleImport}
             onExport={handleExport}
+            onCreateShort={handleCreateShort}
+            onUndoShort={handleUndoShort}
+            onAcceptShort={handleAcceptShort}
+            onExportShort={handleExportShort}
           />
         ) : null}
       </main>
@@ -280,6 +330,10 @@ export function App() {
           const reply = await submitTippy(text, project?.projectId);
           if (reply.hits[0]) {
             requestSeek(reply.hits[0].startMs);
+          }
+          if (project) {
+            await refreshOpenProject(project.projectId);
+            await refreshWorkspace();
           }
           if (reply.handled || reply.connected) {
             return reply.message;

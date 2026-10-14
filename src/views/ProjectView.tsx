@@ -11,7 +11,15 @@ import {
   phaseLabel,
   privacyLabel,
 } from "../lib/format";
-import type { Job, MediaAsset, Moment, Project, TranscriptSegment } from "../types";
+import type {
+  ExportRecord,
+  Job,
+  MediaAsset,
+  Moment,
+  Project,
+  Sequence,
+  TranscriptSegment,
+} from "../types";
 
 interface ProjectViewProps {
   project: Project;
@@ -23,6 +31,10 @@ interface ProjectViewProps {
   onSeek: (ms: number) => void;
   onImport: () => Promise<void>;
   onExport: (mediaId: string) => Promise<void>;
+  onCreateShort: (momentId: string) => Promise<void>;
+  onUndoShort: (sequenceId: string) => Promise<void>;
+  onAcceptShort: (sequenceId: string) => Promise<void>;
+  onExportShort: (sequenceId: string) => Promise<void>;
 }
 
 export function ProjectView({
@@ -35,6 +47,10 @@ export function ProjectView({
   onSeek,
   onImport,
   onExport,
+  onCreateShort,
+  onUndoShort,
+  onAcceptShort,
+  onExportShort,
 }: ProjectViewProps) {
   const media = project.media[0] ?? null;
   const [playhead, setPlayhead] = useState(0);
@@ -123,8 +139,15 @@ export function ProjectView({
               )?.error ?? null
             }
             moments={project.moments}
+            sequences={project.sequences}
+            jobs={project.jobs}
+            exports={project.exports}
             onSeek={onSeek}
             onPlayhead={setPlayhead}
+            onCreateShort={onCreateShort}
+            onUndoShort={onUndoShort}
+            onAcceptShort={onAcceptShort}
+            onExportShort={onExportShort}
           />
         ) : (
           <p className="empty">Import an MP4 to probe it, build a proxy, and preview it.</p>
@@ -155,9 +178,16 @@ function MediaStage({
   seekMs,
   segments,
   moments,
+  sequences,
+  jobs,
+  exports,
   transcriptError,
   onSeek,
   onPlayhead,
+  onCreateShort,
+  onUndoShort,
+  onAcceptShort,
+  onExportShort,
 }: {
   media: MediaAsset;
   playhead: number;
@@ -166,9 +196,16 @@ function MediaStage({
   seekMs: number | null;
   segments: TranscriptSegment[];
   moments: Moment[];
+  sequences: Sequence[];
+  jobs: Job[];
+  exports: ExportRecord[];
   transcriptError: string | null;
   onSeek: (ms: number) => void;
   onPlayhead: (value: number) => void;
+  onCreateShort: (momentId: string) => Promise<void>;
+  onUndoShort: (sequenceId: string) => Promise<void>;
+  onAcceptShort: (sequenceId: string) => Promise<void>;
+  onExportShort: (sequenceId: string) => Promise<void>;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [query, setQuery] = useState("");
@@ -255,7 +292,17 @@ function MediaStage({
           <p className="empty">Waveform appears after the audio pass.</p>
         )}
       </div>
-      <Moments moments={moments} onSeek={onSeek} />
+      <Moments moments={moments} jobs={jobs} onSeek={onSeek} onCreateShort={onCreateShort} />
+      <Shorts
+        sequences={sequences}
+        jobs={jobs}
+        exports={exports}
+        previewOrigin={previewOrigin}
+        sourcePreview={preview}
+        onUndo={onUndoShort}
+        onAccept={onAcceptShort}
+        onExport={onExportShort}
+      />
       <Analysis
         media={media}
         segments={segments}
@@ -277,7 +324,17 @@ const SCORE_BARS: Array<{ key: keyof Moment["scores"]; label: string }> = [
   { key: "standaloneContext", label: "Context" },
 ];
 
-function Moments({ moments, onSeek }: { moments: Moment[]; onSeek: (ms: number) => void }) {
+function Moments({
+  moments,
+  jobs,
+  onSeek,
+  onCreateShort,
+}: {
+  moments: Moment[];
+  jobs: Job[];
+  onSeek: (ms: number) => void;
+  onCreateShort: (momentId: string) => Promise<void>;
+}) {
   return (
     <div className="moment-block" data-testid="moments">
       <div className="waveform-label">
@@ -318,9 +375,19 @@ function Moments({ moments, onSeek }: { moments: Moment[]; onSeek: (ms: number) 
                       );
                     })}
                   </ul>
-                  <button type="button" onClick={() => onSeek(moment.startMs)}>
-                    Preview
-                  </button>
+                  <div className="moment-actions">
+                    <button type="button" onClick={() => onSeek(moment.startMs)}>
+                      Preview
+                    </button>
+                    <button
+                      type="button"
+                      data-testid={`create-short-${moment.momentId}`}
+                      onClick={() => void onCreateShort(moment.momentId)}
+                    >
+                      Create Short
+                    </button>
+                    <ShortProgress jobs={jobs} momentId={moment.momentId} />
+                  </div>
                 </div>
               </article>
             </li>
@@ -329,6 +396,212 @@ function Moments({ moments, onSeek }: { moments: Moment[]; onSeek: (ms: number) 
       ) : (
         <p className="empty">Moments appear after the local scout pass.</p>
       )}
+    </div>
+  );
+}
+
+function ShortProgress({ jobs, momentId }: { jobs: Job[]; momentId: string }) {
+  const job = jobs.find(
+    (item) =>
+      item.type === "create_short" &&
+      item.subjectId === momentId &&
+      (item.state === "queued" || item.state === "running" || item.state === "retrying"),
+  );
+  if (!job) {
+    return null;
+  }
+  const width = Math.round(Math.min(1, Math.max(0, job.progress)) * 100);
+  return (
+    <span className="short-progress" data-testid="short-progress">
+      {jobLabel(job.type)} {width}%
+    </span>
+  );
+}
+
+function Shorts({
+  sequences,
+  jobs,
+  exports,
+  previewOrigin,
+  sourcePreview,
+  onUndo,
+  onAccept,
+  onExport,
+}: {
+  sequences: Sequence[];
+  jobs: Job[];
+  exports: ExportRecord[];
+  previewOrigin: string;
+  sourcePreview: string;
+  onUndo: (sequenceId: string) => Promise<void>;
+  onAccept: (sequenceId: string) => Promise<void>;
+  onExport: (sequenceId: string) => Promise<void>;
+}) {
+  const shorts = sequences.filter(
+    (sequence) => sequence.variation === "original" || sequence.variation === "tippy",
+  );
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected =
+    shorts.find((sequence) => sequence.sequenceId === selectedId) ??
+    shorts.find((sequence) => sequence.variation === "tippy") ??
+    shorts[0];
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [shortTime, setShortTime] = useState(0);
+  const activeCaption =
+    selected?.captions.find(
+      (caption) => shortTime * 1000 >= caption.startMs && shortTime * 1000 < caption.endMs,
+    ) ?? null;
+  const previewPath = selected?.previewPath ?? "";
+  const portrait =
+    selected?.variation === "tippy" && previewPath && previewOrigin
+      ? `${previewOrigin}/v/${encodeURIComponent(previewPath)}`
+      : "";
+  const selectedIdLive = selected?.sequenceId ?? "";
+  const selectedVariation = selected?.variation ?? "";
+  const selectedStart = selected?.sourceStartMs ?? 0;
+  const captionStart = selected?.captions[0]?.startMs ?? 0;
+  const previewStamp =
+    jobs.find(
+      (job) =>
+        job.state === "completed" &&
+        ((job.type === "refresh_short" && job.subjectId === selectedIdLive) ||
+          (job.type === "create_short" && job.subjectId === selected?.momentId)),
+    )?.completedAt ?? "";
+  useEffect(() => {
+    if (!selectedIdLive || !videoRef.current) {
+      return;
+    }
+    const at =
+      selectedVariation === "original" ? selectedStart / 1000 : Math.max(0, captionStart / 1000);
+    videoRef.current.currentTime = at;
+    setShortTime(at);
+  }, [selectedIdLive, selectedVariation, selectedStart, captionStart, portrait, previewStamp]);
+  if (shorts.length === 0) {
+    return null;
+  }
+  const running = jobs.filter(
+    (job) =>
+      (job.type === "create_short" || job.type === "refresh_short" || job.type === "export_short") &&
+      (job.state === "queued" || job.state === "running" || job.state === "retrying"),
+  );
+  const canUndo = selected?.changes.some((change) => !change.undone) ?? false;
+  return (
+    <div className="shorts-block" data-testid="shorts">
+      <div className="waveform-label">
+        <span>Shorts</span>
+        <span>{shorts.length}</span>
+      </div>
+      <div className="short-picker" role="listbox" aria-label="Short variations">
+        {shorts.map((sequence) => {
+          const active = sequence.sequenceId === selected?.sequenceId;
+          return (
+            <button
+              key={sequence.sequenceId}
+              type="button"
+              role="option"
+              aria-selected={active}
+              className={
+                sequence.variation === "tippy"
+                  ? active
+                    ? "short-choice tippy selected"
+                    : "short-choice tippy"
+                  : active
+                    ? "short-choice selected"
+                    : "short-choice"
+              }
+              onClick={() => setSelectedId(sequence.sequenceId)}
+            >
+              {sequence.name}
+            </button>
+          );
+        })}
+      </div>
+      {running.length > 0 ? (
+        <ul className="short-jobs">
+          {running.map((job) => (
+            <li key={job.jobId}>
+              {jobLabel(job.type)} {Math.round(job.progress * 100)}%
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {selected ? (
+        <div className="short-layout">
+          <div className={portrait ? "short-stage portrait" : "short-stage"}>
+            {portrait || sourcePreview ? (
+              <video
+                ref={videoRef}
+                key={`${portrait || sourcePreview}|${previewStamp}|${selected.aspectRatio}|${selected.captions.length}`}
+                data-testid="short-preview"
+                src={portrait ? `${portrait}?t=${encodeURIComponent(previewStamp || selected.sequenceId)}` : sourcePreview}
+                controls
+                muted
+                onLoadedMetadata={(event) => {
+                  const at =
+                    selected.variation === "original"
+                      ? selected.sourceStartMs / 1000
+                      : Math.max(0, (selected.captions[0]?.startMs ?? 0) / 1000);
+                  event.currentTarget.currentTime = at;
+                  setShortTime(at);
+                }}
+                onTimeUpdate={(event) => setShortTime(event.currentTarget.currentTime)}
+              />
+            ) : (
+              <p className="empty">The Short preview appears when the render finishes.</p>
+            )}
+            {activeCaption && selected.variation === "tippy" ? (
+              <p className="short-caption" data-testid="short-caption">
+                {activeCaption.text}
+              </p>
+            ) : null}
+          </div>
+          <div className="review-changes" data-testid="review-changes">
+            <p className="section-label">Review Changes</p>
+            <ul>
+              {selected.changes.map((change) => (
+                <li
+                  key={change.changeId}
+                  className={change.undone ? "undone" : change.accepted ? "accepted" : ""}
+                >
+                  {change.label}
+                </li>
+              ))}
+            </ul>
+            <div className="moment-actions">
+              <button
+                type="button"
+                data-testid="undo-change"
+                disabled={!canUndo}
+                onClick={() => void onUndo(selected.sequenceId)}
+              >
+                Undo
+              </button>
+              <button
+                type="button"
+                data-testid="accept-changes"
+                onClick={() => void onAccept(selected.sequenceId)}
+              >
+                Accept all
+              </button>
+              <button
+                type="button"
+                data-testid="export-short"
+                disabled={!portrait && selected.variation === "tippy"}
+                onClick={() => void onExport(selected.sequenceId)}
+              >
+                Export this Short
+              </button>
+            </div>
+            {exports
+              .filter((item) => item.sequenceId === selected.sequenceId)
+              .map((item) => (
+                <p key={item.exportId} className="short-export" data-testid="short-export-path">
+                  Exported {item.path}
+                </p>
+              ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -429,9 +702,15 @@ function Pipeline({ jobs }: { jobs: Job[] }) {
     "scout_moments",
     "create_export",
   ];
-  const shown = ordered
-    .map((type) => jobs.find((job) => job.type === type))
-    .filter((job): job is Job => Boolean(job));
+  const shown = [
+    ...ordered
+      .map((type) => jobs.find((job) => job.type === type))
+      .filter((job): job is Job => Boolean(job)),
+    ...jobs.filter(
+      (job) =>
+        job.type === "create_short" || job.type === "refresh_short" || job.type === "export_short",
+    ),
+  ];
   if (shown.length === 0) {
     return null;
   }

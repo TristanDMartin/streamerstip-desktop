@@ -81,6 +81,13 @@ pub struct RenderSegment {
     pub end_ms: u64,
 }
 
+#[derive(Debug, Clone)]
+pub struct ShortCaption {
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub text: String,
+}
+
 pub trait MediaEngine: Send + Sync {
     fn availability(&self) -> EngineStatus;
     fn probe(&self, path: &Path) -> Result<ProbeInfo, MediaError>;
@@ -106,6 +113,15 @@ pub trait MediaEngine: Send + Sync {
         segments: &[RenderSegment],
         output: &Path,
         has_audio: bool,
+    ) -> Result<(), MediaError>;
+    fn render_short(
+        &self,
+        segments: &[RenderSegment],
+        captions: &[ShortCaption],
+        vertical: bool,
+        output: &Path,
+        has_audio: bool,
+        progress: &mut dyn FnMut(f64),
     ) -> Result<(), MediaError>;
     fn create_thumbnail(&self, input: &Path, output: &Path, at_ms: u64) -> Result<(), MediaError>;
     fn detect_scenes(&self, input: &Path, duration_ms: u64) -> Result<Vec<SceneSpan>, MediaError>;
@@ -293,6 +309,84 @@ impl MediaEngine for FfmpegMediaEngine {
         result
     }
 
+    fn render_short(
+        &self,
+        segments: &[RenderSegment],
+        captions: &[ShortCaption],
+        vertical: bool,
+        output: &Path,
+        has_audio: bool,
+        progress: &mut dyn FnMut(f64),
+    ) -> Result<(), MediaError> {
+        if segments.is_empty() {
+            return Err(MediaError::Message(
+                "a Short needs at least one segment".into(),
+            ));
+        }
+        ensure_parent(output)?;
+        let scratch = output.with_extension("shortparts");
+        let _ = fs::remove_dir_all(&scratch);
+        fs::create_dir_all(&scratch).map_err(|err| MediaError::Message(err.to_string()))?;
+        let intermediate = scratch.join("joined.mp4");
+        let joined = self.join_segments(segments, &intermediate, has_audio, progress);
+        if let Err(err) = joined {
+            let _ = fs::remove_dir_all(&scratch);
+            return Err(err);
+        }
+        let font = caption_font();
+        let burn = !captions.is_empty() && font.is_some();
+        if !vertical && !burn {
+            let moved = fs::rename(&intermediate, output);
+            let _ = fs::remove_dir_all(&scratch);
+            moved.map_err(|err| MediaError::Message(err.to_string()))?;
+            progress(1.0);
+            return Ok(());
+        }
+        let mut filters = Vec::new();
+        if vertical {
+            filters.push(
+                "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280".to_string(),
+            );
+        }
+        if let Some(font) = font {
+            for (index, caption) in captions.iter().enumerate() {
+                if caption.end_ms <= caption.start_ms || caption.text.trim().is_empty() {
+                    continue;
+                }
+                let text_path = scratch.join(format!("cap-{index}.txt"));
+                fs::write(&text_path, caption.text.trim())
+                    .map_err(|err| MediaError::Message(err.to_string()))?;
+                let start = caption.start_ms as f64 / 1000.0;
+                let end = caption.end_ms as f64 / 1000.0;
+                filters.push(format!(
+                    "drawtext=fontfile={}:textfile={}:expansion=none:fontsize=42:fontcolor=white:box=1:boxcolor=black@0.75:boxborderw=12:x=(w-text_w)/2:y=h-text_h-80:enable='between(t\\,{start:.3}\\,{end:.3})'",
+                    escape_filter_path(&font),
+                    escape_filter_path(&text_path),
+                ));
+            }
+        }
+        if filters.is_empty() {
+            let moved = fs::rename(&intermediate, output);
+            let _ = fs::remove_dir_all(&scratch);
+            moved.map_err(|err| MediaError::Message(err.to_string()))?;
+            progress(1.0);
+            return Ok(());
+        }
+        let duration_ms = segments
+            .iter()
+            .map(|segment| segment.end_ms.saturating_sub(segment.start_ms))
+            .sum();
+        let mut args = base_args(&intermediate);
+        args.push("-vf".into());
+        args.push(filters.join(","));
+        args.extend(encode_args(has_audio, 5));
+        args.extend(["-movflags".into(), "+faststart".into()]);
+        args.push(output.display().to_string());
+        let result = run_ffmpeg(&args, duration_ms, progress);
+        let _ = fs::remove_dir_all(&scratch);
+        result
+    }
+
     fn create_thumbnail(&self, input: &Path, output: &Path, at_ms: u64) -> Result<(), MediaError> {
         let args = vec![
             "-y".into(),
@@ -452,6 +546,79 @@ pub fn waveform_peaks(path: &Path, buckets: usize) -> Result<Vec<f32>, MediaErro
         }
     }
     Ok(peaks)
+}
+
+impl FfmpegMediaEngine {
+    fn join_segments(
+        &self,
+        segments: &[RenderSegment],
+        output: &Path,
+        has_audio: bool,
+        progress: &mut dyn FnMut(f64),
+    ) -> Result<(), MediaError> {
+        if segments.len() == 1 {
+            let segment = &segments[0];
+            return self.trim(
+                &segment.path,
+                output,
+                segment.start_ms,
+                segment.end_ms,
+                has_audio,
+            );
+        }
+        let scratch = output.with_extension("pieces");
+        let _ = fs::remove_dir_all(&scratch);
+        fs::create_dir_all(&scratch).map_err(|err| MediaError::Message(err.to_string()))?;
+        let mut list = String::new();
+        for (index, segment) in segments.iter().enumerate() {
+            let piece = scratch.join(format!("piece-{index}.mp4"));
+            self.trim(
+                &segment.path,
+                &piece,
+                segment.start_ms,
+                segment.end_ms,
+                has_audio,
+            )?;
+            list.push_str(&format!("file '{}'\n", piece.display()));
+            progress((index as f64 + 1.0) / segments.len() as f64 * 0.6);
+        }
+        let list_path = scratch.join("list.txt");
+        fs::write(&list_path, list).map_err(|err| MediaError::Message(err.to_string()))?;
+        let mut args = vec![
+            "-y".into(),
+            "-f".into(),
+            "concat".into(),
+            "-safe".into(),
+            "0".into(),
+            "-i".into(),
+            list_path.display().to_string(),
+        ];
+        args.extend(encode_args(has_audio, 5));
+        args.push(output.display().to_string());
+        let result = run_ffmpeg(&args, 0, &mut |_| {});
+        let _ = fs::remove_dir_all(&scratch);
+        result
+    }
+}
+
+fn caption_font() -> Option<PathBuf> {
+    const CANDIDATES: &[&str] = &[
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ];
+    CANDIDATES
+        .iter()
+        .map(PathBuf::from)
+        .find(|path| path.is_file())
+}
+
+fn escape_filter_path(path: &Path) -> String {
+    path.display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace(':', "\\:")
+        .replace('\'', "\\'")
 }
 
 fn base_args(input: &Path) -> Vec<String> {
@@ -942,6 +1109,45 @@ mod tests {
         assert!(!scenes.is_empty());
         let silences = engine.detect_silence(&audio, probe.duration_ms).unwrap();
         assert!(silences.is_empty() || silences.iter().all(|span| span.end_ms > span.start_ms));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn vertical_short_is_mpeg4_aac_and_portrait() {
+        let status = FfmpegMediaEngine::status();
+        assert!(status.ready, "{}", status.message);
+        let dir =
+            std::env::temp_dir().join(format!("tippy-short-{}", uuid::Uuid::new_v4().simple()));
+        fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("bars.mp4");
+        render_color_bars(&source).unwrap();
+        let engine = FfmpegMediaEngine;
+        let output = dir.join("short.mp4");
+        engine
+            .render_short(
+                &[RenderSegment {
+                    path: source,
+                    start_ms: 0,
+                    end_ms: 1_200,
+                }],
+                &[ShortCaption {
+                    start_ms: 100,
+                    end_ms: 900,
+                    text: "Clutch moment".into(),
+                }],
+                true,
+                &output,
+                true,
+                &mut |_| {},
+            )
+            .unwrap();
+        let probe = engine.probe(&output).unwrap();
+        assert_eq!(probe.video_codec, "mpeg4");
+        assert_eq!(probe.audio_codec, "aac");
+        assert_eq!(probe.width, 720);
+        assert_eq!(probe.height, 1280);
+        assert!(probe.duration_ms > 400);
+        assert!(output.metadata().unwrap().len() > 0);
         let _ = fs::remove_dir_all(dir);
     }
 
