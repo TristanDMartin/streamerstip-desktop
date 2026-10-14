@@ -10,6 +10,7 @@ mod media;
 mod preview;
 mod project;
 mod runtime;
+mod scout;
 mod service;
 mod speech;
 

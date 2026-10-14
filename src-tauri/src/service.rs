@@ -282,6 +282,31 @@ pub fn ask_tippy(state: &AppState, project_id: Option<&str>, text: &str) -> crat
                         .collect(),
                 };
             }
+            if let Some((message, start_ms, end_ms, moment_id)) =
+                crate::scout::answer_best_clips(&project.moments, text)
+            {
+                log_line(
+                    &state.log_path,
+                    "info",
+                    "answered from the local moment shortlist",
+                );
+                let hits = if moment_id.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![crate::ai::TippyHit {
+                        segment_id: moment_id,
+                        start_ms,
+                        end_ms,
+                        text: message.clone(),
+                    }]
+                };
+                return crate::ai::TippyReply {
+                    connected: false,
+                    handled: true,
+                    message,
+                    hits,
+                };
+            }
         }
     }
     let reply = crate::ai::submit_tippy_message(text);
@@ -531,6 +556,31 @@ fn execute(
                 utterances,
             )))
         }
+        "scout_moments" => {
+            let material = load_scout_material(state, project_id, &claimed.media_id)?;
+            let mut moments = crate::scout::rank_moments(&crate::scout::ScoutInput {
+                media_id: &claimed.media_id,
+                duration_ms: material.duration_ms,
+                segments: &material.segments,
+                scenes: &material.scenes,
+                silences: &material.silences,
+                waveform: &material.waveform,
+            });
+            let total = moments.len().max(1);
+            for (index, moment) in moments.iter_mut().enumerate() {
+                let output = folder.join(format!("moment-{index}.png"));
+                let at = moment.start_ms.min(material.duration_ms.saturating_sub(1));
+                if state
+                    .engine
+                    .create_thumbnail(&claimed.input, &output, at)
+                    .is_ok()
+                {
+                    moment.preview_path = Some(output.display().to_string());
+                }
+                report((index as f64 + 1.0) / total as f64);
+            }
+            Ok(Execution::Moments(moments))
+        }
         "create_export" => {
             let output = root
                 .join("projects")
@@ -564,7 +614,44 @@ enum Execution {
     Scenes(Vec<crate::media::SceneSpan>),
     Silences(Vec<crate::media::SilenceSpan>),
     Transcript(Vec<crate::project::TranscriptSegment>),
+    Moments(Vec<crate::project::Moment>),
     Export(PathBuf),
+}
+
+struct ScoutMaterial {
+    duration_ms: u64,
+    segments: Vec<crate::project::TranscriptSegment>,
+    scenes: Vec<crate::media::SceneSpan>,
+    silences: Vec<crate::media::SilenceSpan>,
+    waveform: Vec<f32>,
+}
+
+fn load_scout_material(
+    state: &AppState,
+    project_id: &str,
+    media_id: &str,
+) -> Result<ScoutMaterial, String> {
+    let store = lock(&state.store);
+    let project = store
+        .load_project(project_id)
+        .map_err(|err| err.to_string())?;
+    let media = project
+        .media
+        .iter()
+        .find(|item| item.media_id == media_id)
+        .ok_or_else(|| "that video is not in the project".to_string())?;
+    let duration_ms = media
+        .probe
+        .as_ref()
+        .map(|probe| probe.duration_ms)
+        .unwrap_or(0);
+    Ok(ScoutMaterial {
+        duration_ms,
+        segments: project.transcript.segments.clone(),
+        scenes: media.scenes.clone(),
+        silences: media.silences.clone(),
+        waveform: media.waveform.clone(),
+    })
 }
 
 fn stored_path(
@@ -605,6 +692,10 @@ fn finalize(
     let cancelled = claimed.cancel.load(Ordering::Relaxed)
         || matches!(outcome.as_ref(), Err(message) if message == "cancelled");
     let transcribed = !cancelled && claimed.job_type == "transcribe_media" && outcome.is_ok();
+    let moment_count = match outcome.as_ref() {
+        Ok(Execution::Moments(moments)) if !cancelled => moments.len(),
+        _ => 0,
+    };
     let Some(index) = project
         .jobs
         .iter()
@@ -636,6 +727,9 @@ fn finalize(
                 }
                 if claimed.job_type == "transcribe_media" {
                     record_version(&mut project, "Transcribed video");
+                }
+                if claimed.job_type == "scout_moments" {
+                    record_version(&mut project, "Scouted moments");
                 }
             }
             Err(message) => {
@@ -671,6 +765,14 @@ fn finalize(
                 project_id: project_id.into(),
                 kind: "transcription_ms".into(),
                 amount: claimed.duration_ms as f64,
+                at: now_iso(),
+            });
+        }
+        if moment_count > 0 {
+            let _ = meter.record(CostEntry {
+                project_id: project_id.into(),
+                kind: "moments".into(),
+                amount: moment_count as f64,
                 at: now_iso(),
             });
         }
@@ -751,6 +853,10 @@ fn apply_execution(project: &mut Project, media_id: &str, execution: Execution) 
             project.transcript.media_id = media_id.into();
             project.transcript.segments = segments;
         }
+        Execution::Moments(moments) => {
+            project.moments.retain(|moment| moment.media_id != media_id);
+            project.moments.extend(moments);
+        }
         Execution::Export(path) => {
             project.exports.push(ExportRecord {
                 export_id: new_id("exp"),
@@ -791,6 +897,7 @@ fn running_message(job_type: &str) -> &'static str {
         "detect_scenes" => "Detecting scenes",
         "detect_silence" => "Detecting silence",
         "transcribe_media" => "Transcribing",
+        "scout_moments" => "Finding moments",
         "create_export" => "Exporting",
         _ => "Working",
     }
@@ -971,7 +1078,7 @@ mod tests {
         std::fs::write(&source, b"original-bytes").unwrap();
         let created = create_project(&state, "Evening stream").unwrap();
         let imported = import_video(&state, &created.project_id, &source).unwrap();
-        assert_eq!(imported.jobs.len(), 7);
+        assert_eq!(imported.jobs.len(), 8);
         assert!(imported
             .jobs
             .iter()
@@ -1004,10 +1111,29 @@ mod tests {
         .unwrap();
         assert_eq!(hits[0].start_ms, 12_400);
         assert!(message.contains("0:12"));
+        assert_eq!(project.moments.len(), 1);
+        assert_eq!(project.moments[0].category, "Gameplay");
+        assert!(project.moments[0].quote.to_lowercase().contains("gta"));
+        assert!(!project.moments[0].explanation.is_empty());
+        assert!(project.moments[0].preview_path.is_some());
+        assert!(project.moments[0].end_ms > project.moments[0].start_ms);
+        let encoded = serde_json::to_value(&project.moments[0]).unwrap();
+        assert!(encoded.get("score").is_none());
+        assert!(encoded.get("viralScore").is_none());
+        let reply = ask_tippy(&state, Some(&project.project_id), "Find my best clips");
+        assert!(reply.handled);
+        assert!(!reply.connected);
+        assert!(reply.message.contains("Gameplay"));
+        assert_eq!(reply.hits[0].start_ms, project.moments[0].start_ms);
         assert!(project
             .jobs
             .iter()
             .all(|job| job.state == JobState::Completed));
+        assert!(project
+            .tippy_context
+            .versions
+            .iter()
+            .any(|version| version.label == "Scouted moments"));
         assert!(project
             .tippy_context
             .versions

@@ -49,6 +49,8 @@ export function jobLabel(jobType: string): string {
       return "Silence";
     case "transcribe_media":
       return "Transcript";
+    case "scout_moments":
+      return "Moments";
     case "create_export":
       return "Export";
     default:
@@ -58,9 +60,14 @@ export function jobLabel(jobType: string): string {
 
 export function formatDuration(durationMs: number): string {
   const total = Math.max(0, Math.round(durationMs / 1000));
-  const minutes = Math.floor(total / 60);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
   const seconds = total % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  const clock = `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+  }
+  return clock;
 }
 
 export function formatBytes(size: number): string {

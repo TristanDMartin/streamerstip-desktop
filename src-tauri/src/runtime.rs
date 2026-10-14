@@ -62,6 +62,12 @@ pub fn plan_import() -> Vec<TaskNode> {
             "transcript_agent",
             vec!["audio"],
         ),
+        node(
+            "moments",
+            "scout_moments",
+            "moment_scout",
+            vec!["transcript", "scenes", "silence"],
+        ),
     ]
 }
 
@@ -133,7 +139,7 @@ pub const WORKERS: &[WorkerDefinition] = &[
     WorkerDefinition {
         id: "moment_scout",
         role: "Moment Scout",
-        responsibility: "Highlight detection is not connected in this build",
+        responsibility: "Local moment shortlist from the transcript, scenes, and silence",
     },
     WorkerDefinition {
         id: "clip_editor",
@@ -210,6 +216,11 @@ pub fn tools() -> &'static [ToolDefinition] {
             id: "transcribe_media",
             engine_method: "transcribe",
             agent: "transcript_agent",
+        },
+        ToolDefinition {
+            id: "scout_moments",
+            engine_method: "scout_moments",
+            agent: "moment_scout",
         },
     ]
 }
@@ -425,6 +436,7 @@ pub fn derived_dir(root: &Path, project_id: &str, media_id: &str) -> std::path::
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::PrivacyMode;
     use crate::project::Project;
 
     #[test]
@@ -432,7 +444,16 @@ mod tests {
         let plan = plan_import();
         assert_eq!(plan[0].action_id, "probe_media");
         assert!(plan[1].depends_on.contains(&"probe".into()));
+        let scout = plan
+            .iter()
+            .find(|node| node.action_id == "scout_moments")
+            .unwrap();
+        assert!(scout.depends_on.contains(&"transcript".into()));
+        assert!(scout.depends_on.contains(&"scenes".into()));
+        assert!(scout.depends_on.contains(&"silence".into()));
         assert!(plan_goal("make shorts").is_err());
+        let (scouted, _) = authorize("scout_moments", PrivacyMode::LocalFirst);
+        assert_eq!(scouted, PermissionDecision::Allowed);
     }
 
     #[test]
