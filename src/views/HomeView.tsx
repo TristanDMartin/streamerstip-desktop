@@ -55,24 +55,22 @@ export function CreateCard({
   return (
     <form className="panel create-card" onSubmit={(event) => void submit(event)}>
       <label htmlFor="project-name">New project</label>
-      <div className="create-row">
-        <input
-          id="project-name"
-          data-testid="new-project-name"
-          value={name}
-          placeholder="Project name"
-          maxLength={80}
-          onChange={(event) => setName(event.target.value)}
-        />
-        <button
-          type="submit"
-          className="primary"
-          data-testid="create-project"
-          disabled={isSaving || name.trim().length === 0}
-        >
-          New Project
-        </button>
-      </div>
+      <input
+        id="project-name"
+        data-testid="new-project-name"
+        value={name}
+        placeholder="Project name"
+        maxLength={80}
+        onChange={(event) => setName(event.target.value)}
+      />
+      <button
+        type="submit"
+        className="primary new-project"
+        data-testid="create-project"
+        disabled={isSaving}
+      >
+        New Project
+      </button>
     </form>
   );
 }

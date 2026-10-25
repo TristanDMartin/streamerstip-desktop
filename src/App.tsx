@@ -261,6 +261,7 @@ export function App() {
       <nav className="nav" aria-label="Primary">
         {NAV.map((item) => {
           const Icon = item.icon;
+          const isCreate = item.id === "create";
           const active =
             (item.id === "home" && route.name === "home") ||
             (item.id === "projects" &&
@@ -269,7 +270,13 @@ export function App() {
             <button
               key={item.id}
               type="button"
-              className={active && item.enabled ? "nav-item active" : "nav-item"}
+              className={
+                isCreate
+                  ? "nav-item nav-create"
+                  : active && item.enabled
+                    ? "nav-item active"
+                    : "nav-item"
+              }
               disabled={!item.enabled}
               title={item.enabled ? item.label : "Not in this phase"}
               data-testid={`nav-${item.id}`}
@@ -282,7 +289,7 @@ export function App() {
                 }
               }}
             >
-              <Icon />
+              {isCreate ? null : <Icon />}
               {item.label}
             </button>
           );
