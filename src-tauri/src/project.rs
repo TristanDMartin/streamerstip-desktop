@@ -178,6 +178,25 @@ pub struct MomentScores {
     pub standalone_context: f64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PackageDraft {
+    pub package_id: String,
+    pub sequence_id: String,
+    pub moment_id: String,
+    pub title: String,
+    pub hook: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct QaFinding {
+    pub finding_id: String,
+    pub sequence_id: String,
+    pub passed: bool,
+    pub summary: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Moment {
@@ -639,6 +658,7 @@ mod tests {
             media_id: "media_1".into(),
             message: "Writing proxy".into(),
             subject_id: String::new(),
+            explanation: String::new(),
         });
         store.save_project(&project, true).unwrap();
         let recovered = store.recover_on_launch(&project.project_id).unwrap();

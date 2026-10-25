@@ -1,6 +1,6 @@
 import type { JobState } from "../types";
 
-export type JobPhase = "queued" | "running" | "done" | "failed" | "cancelled";
+export type JobPhase = "queued" | "running" | "paused" | "done" | "failed" | "cancelled";
 
 export function jobPhase(state: JobState | string): JobPhase {
   switch (state) {
@@ -9,6 +9,8 @@ export function jobPhase(state: JobState | string): JobPhase {
       return "running";
     case "completed":
       return "done";
+    case "paused":
+      return "paused";
     case "failed":
       return "failed";
     case "cancelled":
@@ -24,6 +26,8 @@ export function phaseLabel(phase: JobPhase): string {
       return "Queued";
     case "running":
       return "Running";
+    case "paused":
+      return "Paused";
     case "done":
       return "Done";
     case "failed":
@@ -57,6 +61,10 @@ export function jobLabel(jobType: string): string {
       return "Short";
     case "export_short":
       return "Export Short";
+    case "package_content":
+      return "Package";
+    case "qa_content":
+      return "QA";
     case "create_export":
       return "Export";
     default:

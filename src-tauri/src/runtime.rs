@@ -77,7 +77,7 @@ pub fn plan_export() -> Vec<TaskNode> {
 }
 
 pub fn plan_shorts(moment_ids: &[String]) -> Vec<TaskNode> {
-    moment_ids
+    let mut nodes: Vec<TaskNode> = moment_ids
         .iter()
         .enumerate()
         .map(|(index, moment_id)| TaskNode {
@@ -87,7 +87,26 @@ pub fn plan_shorts(moment_ids: &[String]) -> Vec<TaskNode> {
             depends_on: Vec::new(),
             subject_id: moment_id.clone(),
         })
-        .collect()
+        .collect();
+    if nodes.is_empty() {
+        return nodes;
+    }
+    let short_keys: Vec<String> = nodes.iter().map(|node| node.key.clone()).collect();
+    nodes.push(TaskNode {
+        key: "package".into(),
+        action_id: "package_content".into(),
+        agent: "packaging_agent".into(),
+        depends_on: short_keys,
+        subject_id: String::new(),
+    });
+    nodes.push(TaskNode {
+        key: "qa".into(),
+        action_id: "qa_content".into(),
+        agent: "qa_agent".into(),
+        depends_on: vec!["package".into()],
+        subject_id: String::new(),
+    });
+    nodes
 }
 
 pub fn plan_short_followup(action_id: &str, sequence_id: &str) -> Vec<TaskNode> {
@@ -203,12 +222,12 @@ pub const WORKERS: &[WorkerDefinition] = &[
     WorkerDefinition {
         id: "packaging_agent",
         role: "Packaging Agent",
-        responsibility: "Titles and descriptions are not connected in this build",
+        responsibility: "Writes a title and hook on this machine. Nothing is published.",
     },
     WorkerDefinition {
         id: "qa_agent",
         role: "QA Agent",
-        responsibility: "Export checks are not connected in this build",
+        responsibility: "Checks that a Short is vertical, captioned, and ready to review.",
     },
 ];
 
@@ -285,6 +304,16 @@ pub fn tools() -> &'static [ToolDefinition] {
             id: "export_short",
             engine_method: "render_short",
             agent: "clip_editor",
+        },
+        ToolDefinition {
+            id: "package_content",
+            engine_method: "package_content",
+            agent: "packaging_agent",
+        },
+        ToolDefinition {
+            id: "qa_content",
+            engine_method: "qa_content",
+            agent: "qa_agent",
         },
     ]
 }
@@ -414,6 +443,7 @@ impl Orchestrator {
                 media_id: media_id.to_string(),
                 message,
                 subject_id: node.subject_id.clone(),
+                explanation: crate::team::explanation_for(&node.action_id).into(),
             });
             created.push(job_id);
         }
@@ -550,6 +580,7 @@ mod tests {
                 media_id: "media_1".into(),
                 message: String::new(),
                 subject_id: id.into(),
+                explanation: String::new(),
             }
         }
         let shorts: Vec<_> = (0..6)
@@ -562,9 +593,17 @@ mod tests {
         assert_eq!(runnable_batch(&mixed, 4), vec![0]);
         assert!(parallel_limit() >= 1 && parallel_limit() <= 4);
         let plan = plan_shorts(&["moment_a".into(), "moment_b".into()]);
-        assert_eq!(plan.len(), 2);
-        assert!(plan.iter().all(|node| node.depends_on.is_empty()));
+        assert_eq!(plan.len(), 4);
+        assert!(plan[..2].iter().all(|node| node.depends_on.is_empty()));
         assert_eq!(plan[1].subject_id, "moment_b");
+        assert_eq!(plan[2].action_id, "package_content");
+        assert_eq!(plan[2].agent, "packaging_agent");
+        assert_eq!(
+            plan[2].depends_on,
+            vec!["short-0".to_string(), "short-1".to_string()]
+        );
+        assert_eq!(plan[3].action_id, "qa_content");
+        assert_eq!(plan[3].depends_on, vec!["package".to_string()]);
     }
 
     #[test]
@@ -595,6 +634,7 @@ mod tests {
             media_id: "media_1".into(),
             message: String::new(),
             subject_id: String::new(),
+            explanation: String::new(),
         };
         let mut running = queued.clone();
         running.job_id = "job_r".into();
@@ -623,6 +663,7 @@ mod tests {
             media_id: "media_1".into(),
             message: "Writing proxy".into(),
             subject_id: String::new(),
+            explanation: String::new(),
         };
         assert!(event_is_small(&BusEvent::job(&project.project_id, &job)));
     }

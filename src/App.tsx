@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   cancelJob,
+  pauseJob,
+  resumeJob,
+  retryJob,
   createProject,
   acceptShortChanges,
   createShort,
@@ -29,6 +32,7 @@ import {
   IconUser,
 } from "./components/Icons";
 import { TIPPY_NOT_CONNECTED, TippyRail } from "./components/TippyRail";
+import { workerCards } from "./lib/team";
 import type { AppMeta, JobListItem, Project, ProjectCard } from "./types";
 import { HomeView } from "./views/HomeView";
 import { ProjectView } from "./views/ProjectView";
@@ -257,6 +261,7 @@ export function App() {
       <nav className="nav" aria-label="Primary">
         {NAV.map((item) => {
           const Icon = item.icon;
+          const isCreate = item.id === "create";
           const active =
             (item.id === "home" && route.name === "home") ||
             (item.id === "projects" &&
@@ -265,7 +270,13 @@ export function App() {
             <button
               key={item.id}
               type="button"
-              className={active && item.enabled ? "nav-item active" : "nav-item"}
+              className={
+                isCreate
+                  ? "nav-item nav-create"
+                  : active && item.enabled
+                    ? "nav-item active"
+                    : "nav-item"
+              }
               disabled={!item.enabled}
               title={item.enabled ? item.label : "Not in this phase"}
               data-testid={`nav-${item.id}`}
@@ -278,7 +289,7 @@ export function App() {
                 }
               }}
             >
-              <Icon />
+              {isCreate ? null : <Icon />}
               {item.label}
             </button>
           );
@@ -290,7 +301,6 @@ export function App() {
           <HomeView
             projects={projects}
             accountLabel={accountLabel}
-            multiAgentEnabled={meta?.flags.desktopMultiAgent ?? false}
             onCreate={handleCreate}
             onOpen={(id) => void handleOpen(id)}
             onAsk={() => composerRef.current?.focus()}
@@ -318,6 +328,42 @@ export function App() {
             onImport={handleImport}
             onExport={handleExport}
             onCreateShort={handleCreateShort}
+            onPauseJob={async (jobId) => {
+              if (!project) {
+                return;
+              }
+              setError(null);
+              const next = await pauseJob(project.projectId, jobId);
+              setProject(next);
+              await refreshWorkspace();
+            }}
+            onResumeJob={async (jobId) => {
+              if (!project) {
+                return;
+              }
+              setError(null);
+              const next = await resumeJob(project.projectId, jobId);
+              setProject(next);
+              await refreshWorkspace();
+            }}
+            onCancelJob={async (jobId) => {
+              if (!project) {
+                return;
+              }
+              setError(null);
+              const next = await cancelJob(project.projectId, jobId);
+              setProject(next);
+              await refreshWorkspace();
+            }}
+            onRetryJob={async (jobId) => {
+              if (!project) {
+                return;
+              }
+              setError(null);
+              const next = await retryJob(project.projectId, jobId);
+              setProject(next);
+              await refreshWorkspace();
+            }}
             onUndoShort={handleUndoShort}
             onAcceptShort={handleAcceptShort}
             onExportShort={handleExportShort}
@@ -325,6 +371,18 @@ export function App() {
         ) : null}
       </main>
       <TippyRail
+        activity={
+          project
+            ? workerCards(project.jobs)
+                .filter((card) => card.tone !== "done")
+                .map((card) => ({
+                  id: card.id,
+                  name: card.name,
+                  label: card.label,
+                  tone: card.tone,
+                }))
+            : []
+        }
         composerRef={composerRef}
         onSubmit={async (text) => {
           const reply = await submitTippy(text, project?.projectId);

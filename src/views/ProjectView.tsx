@@ -1,6 +1,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 
+import { TeamBoard } from "../components/TeamBoard";
 import { Waveform } from "../components/Waveform";
 import {
   formatBytes,
@@ -32,6 +33,10 @@ interface ProjectViewProps {
   onImport: () => Promise<void>;
   onExport: (mediaId: string) => Promise<void>;
   onCreateShort: (momentId: string) => Promise<void>;
+  onPauseJob: (jobId: string) => Promise<void>;
+  onResumeJob: (jobId: string) => Promise<void>;
+  onCancelJob: (jobId: string) => Promise<void>;
+  onRetryJob: (jobId: string) => Promise<void>;
   onUndoShort: (sequenceId: string) => Promise<void>;
   onAcceptShort: (sequenceId: string) => Promise<void>;
   onExportShort: (sequenceId: string) => Promise<void>;
@@ -48,6 +53,10 @@ export function ProjectView({
   onImport,
   onExport,
   onCreateShort,
+  onPauseJob,
+  onResumeJob,
+  onCancelJob,
+  onRetryJob,
   onUndoShort,
   onAcceptShort,
   onExportShort,
@@ -82,6 +91,13 @@ export function ProjectView({
         </div>
       </header>
       {!engineReady ? <p className="banner">{engineMessage}</p> : null}
+      <TeamBoard
+        jobs={project.jobs}
+        onPause={(jobId) => void onPauseJob(jobId)}
+        onResume={(jobId) => void onResumeJob(jobId)}
+        onCancel={(jobId) => void onCancelJob(jobId)}
+        onRetry={(jobId) => void onRetryJob(jobId)}
+      />
       <div className="overview-grid">
         <article className="panel">
           <p className="section-label">Overview</p>
