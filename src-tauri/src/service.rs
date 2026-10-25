@@ -8,6 +8,7 @@ use serde::Serialize;
 use serde_json::json;
 
 use crate::account::{self, LocalAccount};
+use crate::editor::TimelineEdit;
 use crate::error::{DesktopError, DesktopResult};
 use crate::flags::{self, FeatureFlags};
 use crate::jobs::JobState;
@@ -244,11 +245,12 @@ pub fn import_video(state: &AppState, project_id: &str, source: &Path) -> Deskto
         aspect_ratio: String::new(),
         caption_theme: String::new(),
         export_preset: String::new(),
-        captions: Vec::new(),
+        captions: vec![crate::editor::opening_caption(0)],
         changes: Vec::new(),
         preview_path: None,
         source_start_ms: 0,
         source_end_ms: 0,
+        editor: crate::editor::seed_assembly(&media_id, 0),
     });
     record_version(&mut project, "Imported video");
     Orchestrator.enqueue(&mut project, &media_id, &crate::runtime::plan_import());
@@ -258,6 +260,40 @@ pub fn import_video(state: &AppState, project_id: &str, source: &Path) -> Deskto
         "info",
         &format!("imported {} into {}", source.display(), project.project_id),
     );
+    Ok(project)
+}
+
+pub fn edit_timeline(
+    state: &AppState,
+    project_id: &str,
+    edit: TimelineEdit,
+) -> DesktopResult<Project> {
+    let store = lock(&state.store);
+    let mut project = store.load_project(project_id)?;
+    let index = project
+        .sequences
+        .iter()
+        .position(|sequence| sequence.variation.is_empty() && sequence.moment_id.is_empty())
+        .ok_or_else(|| DesktopError::Message("Import a video before editing.".into()))?;
+    if edit.op == "save_version" {
+        record_version(&mut project, "Saved this edit");
+        record_action(
+            &mut project,
+            "save_version",
+            json!({ "label": "Saved this edit" }),
+        );
+        project.touch();
+        store.save_project(&project, true)?;
+        log_line(
+            &state.log_path,
+            "info",
+            "saved this edit locally; no model was called",
+        );
+        return Ok(project);
+    }
+    crate::editor::apply(&mut project.sequences[index], &edit)?;
+    project.touch();
+    store.save_project(&project, false)?;
     Ok(project)
 }
 
@@ -1057,6 +1093,7 @@ fn apply_execution(project: &mut Project, media_id: &str, execution: Execution) 
                         clip.end_ms = duration;
                     }
                 }
+                crate::editor::materialize(sequence, media_id, duration);
             }
         }
         Execution::Proxy(path) => {
@@ -1983,6 +2020,45 @@ mod tests {
         run_pending(&state, &loaded.project_id, &mut |_, _| {}).unwrap();
         let exported = open_project(&state, &loaded.project_id).unwrap();
         assert!(std::path::Path::new(&exported.exports[0].path).is_file());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn editor_save_version_uses_creator_language() {
+        let (root, state) = state();
+        let source = root.join("clip.mp4");
+        std::fs::write(&source, b"original-bytes").unwrap();
+        let created = create_project(&state, "Edit").unwrap();
+        import_video(&state, &created.project_id, &source).unwrap();
+        run_pending(&state, &created.project_id, &mut |_, _| {}).unwrap();
+        let project = open_project(&state, &created.project_id).unwrap();
+        let assembly = project
+            .sequences
+            .iter()
+            .find(|sequence| sequence.variation.is_empty())
+            .unwrap();
+        let tracks: Vec<_> = assembly
+            .editor
+            .clips
+            .iter()
+            .map(|clip| clip.track.as_str())
+            .collect();
+        assert_eq!(tracks, vec!["v1", "v2", "a1", "a2"]);
+        assert!(!assembly.captions.is_empty());
+        let saved = edit_timeline(
+            &state,
+            &created.project_id,
+            TimelineEdit {
+                op: "save_version".into(),
+                ..TimelineEdit::default()
+            },
+        )
+        .unwrap();
+        assert!(saved
+            .tippy_context
+            .versions
+            .iter()
+            .any(|version| version.label == "Saved this edit"));
         let _ = std::fs::remove_dir_all(root);
     }
 }

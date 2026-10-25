@@ -976,3 +976,170 @@ textarea:focus,
 .tippy-activity .tone-paused {
   color: var(--purple);
 }
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.editor-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.editor-version,
+.editor-keys,
+.editor-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.editor-note {
+  color: var(--red);
+}
+
+.editor-stage {
+  position: relative;
+  height: 168px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+}
+
+.editor-stage video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.editor-stage.cropped video {
+  object-fit: cover;
+  transform: scale(1.18);
+}
+
+.editor-stage.punched video {
+  transform: scale(1.32);
+}
+
+.editor-stage.cropped.punched video {
+  object-fit: cover;
+  transform: scale(1.45);
+}
+
+.editor-caption,
+.editor-overlay {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.75);
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.editor-caption {
+  bottom: 14px;
+}
+
+.editor-overlay {
+  top: 14px;
+  color: var(--cyan);
+}
+
+.editor-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.editor-tools .ghost.on {
+  background: var(--cyan);
+  border-color: var(--cyan);
+  color: var(--obsidian);
+}
+
+.editor-fields {
+  display: grid;
+  grid-template-columns: 1.4fr 72px 72px 1.1fr 1fr;
+  gap: 8px;
+}
+
+.editor-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.editor-fields input {
+  width: 100%;
+  height: 34px;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.track {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.track > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.track-lane {
+  position: relative;
+  height: 28px;
+  border-radius: 8px;
+  background: #0d1118;
+  border: 1px solid var(--line);
+}
+
+.clip-bar {
+  position: absolute;
+  top: 3px;
+  height: 20px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(0, 242, 254, 0.22);
+  color: var(--white);
+  font-size: 11px;
+  padding: 0 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clip-bar.selected {
+  background: var(--cyan);
+  color: var(--obsidian);
+}
+
+.caption-bar {
+  background: rgba(123, 44, 191, 0.55);
+  color: var(--white);
+}
+
+.transition-mark {
+  position: absolute;
+  top: 5px;
+  right: 8px;
+  color: var(--cyan);
+  font-size: 11px;
+  font-style: normal;
+}

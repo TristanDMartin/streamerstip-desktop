@@ -1,6 +1,6 @@
 # Tippy Desktop
 
-Phase 0 through Phase 5 of Tippy Desktop: a local Tauri shell for creating a project, importing video, ranking moments, turning a moment into a draft Short, and showing Tippy's workers on that goal.
+Phase 0 through Phase 6 of Tippy Desktop: a local Tauri shell for creating a project, importing video, ranking moments, turning a moment into a draft Short, showing Tippy's workers on that goal, and editing the timeline.
 
 This repository is the isolated desktop app. It does not change the StreamersTip website or the Flutter app.
 
@@ -22,8 +22,9 @@ This repository is the isolated desktop app. It does not change the StreamersTip
 - “Create 4 Shorts” runs child jobs with visible progress, capped by this machine
 - A Tippy team on the project: worker cards, task activity, pause, resume, cancel, retry, job history, and a plain-language explanation for each task
 - Packaging writes a local title and hook from the moment. QA checks that the Short is vertical, captioned, and ready to review. Nothing is published
+- A thin editor on the project: two video tracks, two audio tracks, an editable caption track, crop, one punch-in, a cut or short crossfade, a text overlay, audio volume, and shortcuts for play, split, delete, and undo. Save Version records “Saved this edit.”
 
-Publishing, Planner, the full editor, OBS, and live model calls are not in this build.
+Publishing, Planner, a Premiere replacement, OBS, and live model calls are not in this build.
 
 ## Account seam
 

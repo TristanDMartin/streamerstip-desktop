@@ -234,6 +234,7 @@ pub fn draft_variations(input: DraftInput<'_>) -> (Sequence, Sequence) {
         preview_path: None,
         source_start_ms: moment.start_ms,
         source_end_ms: moment.end_ms,
+        editor: crate::project::EditorState::default(),
     };
     let captions = captions_for(&pieces, input.segments);
     let mut changes = vec![change(
@@ -291,6 +292,7 @@ pub fn draft_variations(input: DraftInput<'_>) -> (Sequence, Sequence) {
         preview_path: None,
         source_start_ms: moment.start_ms,
         source_end_ms: moment.end_ms,
+        editor: crate::project::EditorState::default(),
     };
     (original, tippy)
 }

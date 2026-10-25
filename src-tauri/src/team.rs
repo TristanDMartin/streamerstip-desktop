@@ -179,6 +179,7 @@ mod tests {
             preview_path: Some("short.mp4".into()),
             source_start_ms: 0,
             source_end_ms: 4000,
+            editor: crate::project::EditorState::default(),
         }
     }
 
