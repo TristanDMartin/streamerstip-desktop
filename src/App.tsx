@@ -9,6 +9,7 @@ import {
   acceptShortChanges,
   createShort,
   exportShort,
+  editTimeline,
   exportVideo,
   getAppMeta,
   importVideo,
@@ -33,7 +34,7 @@ import {
 } from "./components/Icons";
 import { TIPPY_NOT_CONNECTED, TippyRail } from "./components/TippyRail";
 import { workerCards } from "./lib/team";
-import type { AppMeta, JobListItem, Project, ProjectCard } from "./types";
+import type { AppMeta, JobListItem, Project, ProjectCard, TimelineEdit } from "./types";
 import { HomeView } from "./views/HomeView";
 import { ProjectView } from "./views/ProjectView";
 import { ProjectsView } from "./views/ProjectsView";
@@ -220,6 +221,16 @@ export function App() {
     setProject(next);
   }
 
+  async function handleEdit(edit: TimelineEdit) {
+    if (!project) {
+      return;
+    }
+    setError(null);
+    const next = await editTimeline(project.projectId, edit);
+    setProject(next);
+    await refreshWorkspace();
+  }
+
   async function handleExportShort(sequenceId: string) {
     if (!project) {
       return;
@@ -367,6 +378,7 @@ export function App() {
             onUndoShort={handleUndoShort}
             onAcceptShort={handleAcceptShort}
             onExportShort={handleExportShort}
+            onEdit={handleEdit}
           />
         ) : null}
       </main>

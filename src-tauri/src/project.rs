@@ -80,6 +80,80 @@ pub struct CaptionCue {
     pub text: String,
 }
 
+fn default_volume() -> f64 {
+    1.0
+}
+
+fn default_transition() -> String {
+    "cut".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorClip {
+    pub clip_id: String,
+    pub track: String,
+    pub media_id: String,
+    pub source_in_ms: u64,
+    pub source_out_ms: u64,
+    pub timeline_in_ms: u64,
+    #[serde(default = "default_volume")]
+    pub volume: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorSnapshot {
+    pub clips: Vec<EditorClip>,
+    pub captions: Vec<CaptionCue>,
+    pub crop: String,
+    pub punch_in: bool,
+    pub punch_in_ms: u64,
+    pub transition: String,
+    pub overlay_text: String,
+    pub overlay_start_ms: u64,
+    pub overlay_end_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorState {
+    #[serde(default)]
+    pub clips: Vec<EditorClip>,
+    #[serde(default)]
+    pub crop: String,
+    #[serde(default)]
+    pub punch_in: bool,
+    #[serde(default)]
+    pub punch_in_ms: u64,
+    #[serde(default = "default_transition")]
+    pub transition: String,
+    #[serde(default)]
+    pub overlay_text: String,
+    #[serde(default)]
+    pub overlay_start_ms: u64,
+    #[serde(default)]
+    pub overlay_end_ms: u64,
+    #[serde(default)]
+    pub history: Vec<EditorSnapshot>,
+}
+
+impl Default for EditorState {
+    fn default() -> Self {
+        Self {
+            clips: Vec::new(),
+            crop: String::new(),
+            punch_in: false,
+            punch_in_ms: 0,
+            transition: default_transition(),
+            overlay_text: String::new(),
+            overlay_start_ms: 0,
+            overlay_end_ms: 0,
+            history: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewChange {
@@ -118,6 +192,8 @@ pub struct Sequence {
     pub source_start_ms: u64,
     #[serde(default)]
     pub source_end_ms: u64,
+    #[serde(default)]
+    pub editor: EditorState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -584,6 +660,8 @@ mod tests {
         let opened = parse_project_bytes(&serde_json::to_vec(&value).unwrap()).unwrap();
         assert_eq!(opened.sequences[0].variation, "");
         assert!(opened.sequences[0].captions.is_empty());
+        assert!(opened.sequences[0].editor.clips.is_empty());
+        assert_eq!(opened.sequences[0].editor.transition, "cut");
         assert_eq!(opened.jobs[0].subject_id, "");
     }
 

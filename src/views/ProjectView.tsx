@@ -1,6 +1,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 
+import { EditorBoard } from "../components/EditorBoard";
 import { TeamBoard } from "../components/TeamBoard";
 import { Waveform } from "../components/Waveform";
 import {
@@ -19,6 +20,7 @@ import type {
   Moment,
   Project,
   Sequence,
+  TimelineEdit,
   TranscriptSegment,
 } from "../types";
 
@@ -40,6 +42,7 @@ interface ProjectViewProps {
   onUndoShort: (sequenceId: string) => Promise<void>;
   onAcceptShort: (sequenceId: string) => Promise<void>;
   onExportShort: (sequenceId: string) => Promise<void>;
+  onEdit: (edit: TimelineEdit) => Promise<void>;
 }
 
 export function ProjectView({
@@ -60,6 +63,7 @@ export function ProjectView({
   onUndoShort,
   onAcceptShort,
   onExportShort,
+  onEdit,
 }: ProjectViewProps) {
   const media = project.media[0] ?? null;
   const [playhead, setPlayhead] = useState(0);
@@ -91,6 +95,7 @@ export function ProjectView({
         </div>
       </header>
       {!engineReady ? <p className="banner">{engineMessage}</p> : null}
+      <EditorBoard project={project} previewOrigin={previewOrigin} onEdit={onEdit} />
       <TeamBoard
         jobs={project.jobs}
         onPause={(jobId) => void onPauseJob(jobId)}

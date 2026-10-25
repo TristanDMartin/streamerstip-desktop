@@ -2,6 +2,7 @@ mod account;
 mod actions;
 mod ai;
 mod atomic;
+mod editor;
 mod error;
 mod flags;
 mod jobs;
@@ -218,6 +219,15 @@ fn accept_short_changes(
 }
 
 #[tauri::command]
+fn edit_timeline(
+    state: State<'_, AppState>,
+    project_id: String,
+    edit: editor::TimelineEdit,
+) -> Result<Project, String> {
+    service::edit_timeline(state.inner(), &project_id, edit).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 fn export_short(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -311,7 +321,8 @@ pub fn run() {
             create_short,
             undo_short_change,
             accept_short_changes,
-            export_short
+            export_short,
+            edit_timeline
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tippy Desktop");

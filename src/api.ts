@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppMeta,
   Project,
+  TimelineEdit,
   TippyEvent,
   TippyReply,
   Workspace,
@@ -60,6 +61,13 @@ export function acceptShortChanges(
 
 export function exportShort(projectId: string, sequenceId: string): Promise<Project> {
   return invoke<Project>("export_short", { projectId, sequenceId });
+}
+
+export function editTimeline(
+  projectId: string,
+  edit: TimelineEdit,
+): Promise<Project> {
+  return invoke<Project>("edit_timeline", { projectId, edit });
 }
 
 export function cancelJob(projectId: string, jobId: string): Promise<Project> {

@@ -82,6 +82,41 @@ export interface SequenceClip {
   endMs: number;
 }
 
+export interface EditorClip {
+  clipId: string;
+  track: string;
+  mediaId: string;
+  sourceInMs: number;
+  sourceOutMs: number;
+  timelineInMs: number;
+  volume: number;
+}
+
+export interface EditorState {
+  clips: EditorClip[];
+  crop: string;
+  punchIn: boolean;
+  punchInMs: number;
+  transition: string;
+  overlayText: string;
+  overlayStartMs: number;
+  overlayEndMs: number;
+  history: unknown[];
+}
+
+export interface TimelineEdit {
+  op: string;
+  clipId?: string;
+  captionId?: string;
+  text?: string;
+  startMs?: number;
+  endMs?: number;
+  atMs?: number;
+  volume?: number;
+  enabled?: boolean;
+  kind?: string;
+}
+
 export interface CaptionCue {
   captionId: string;
   startMs: number;
@@ -111,6 +146,7 @@ export interface Sequence {
   previewPath: string | null;
   sourceStartMs: number;
   sourceEndMs: number;
+  editor: EditorState;
 }
 
 export interface ActionRecord {
