@@ -32,8 +32,7 @@ import {
   IconReview,
   IconUser,
 } from "./components/Icons";
-import { TIPPY_NOT_CONNECTED, TippyRail } from "./components/TippyRail";
-import { workerCards } from "./lib/team";
+import { TIPPY_NOT_CONNECTED } from "./components/TippyRail";
 import type { AppMeta, JobListItem, Project, ProjectCard, TimelineEdit } from "./types";
 import { EmptyDestinationView } from "./views/EmptyDestinationView";
 import { HomeView } from "./views/HomeView";
@@ -67,7 +66,6 @@ export function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [seek, setSeek] = useState<{ ms: number; token: number } | null>(null);
-  const composerRef = useRef<HTMLTextAreaElement>(null);
   const routeRef = useRef(route);
   const workspaceGen = useRef(0);
   const projectGen = useRef(0);
@@ -337,7 +335,20 @@ export function App() {
               accountLabel={accountLabel}
               onCreate={handleCreate}
               onOpen={(id) => void handleOpen(id)}
-              onAsk={() => composerRef.current?.focus()}
+              onAskTippy={async (text) => {
+                const reply = await submitTippy(text, project?.projectId);
+                if (reply.hits[0]) {
+                  requestSeek(reply.hits[0].startMs);
+                }
+                if (project) {
+                  await refreshOpenProject(project.projectId);
+                  await refreshWorkspace();
+                }
+                if (reply.handled || reply.connected) {
+                  return reply.message;
+                }
+                return TIPPY_NOT_CONNECTED;
+              }}
             />
           ) : null}
           {route.name === "projects" ? (
@@ -408,35 +419,6 @@ export function App() {
             />
           ) : null}
         </main>
-        <TippyRail
-          activity={
-            project
-              ? workerCards(project.jobs)
-                  .filter((card) => card.tone !== "done")
-                  .map((card) => ({
-                    id: card.id,
-                    name: card.name,
-                    label: card.label,
-                    tone: card.tone,
-                  }))
-              : []
-          }
-          composerRef={composerRef}
-          onSubmit={async (text) => {
-            const reply = await submitTippy(text, project?.projectId);
-            if (reply.hits[0]) {
-              requestSeek(reply.hits[0].startMs);
-            }
-            if (project) {
-              await refreshOpenProject(project.projectId);
-              await refreshWorkspace();
-            }
-            if (reply.handled || reply.connected) {
-              return reply.message;
-            }
-            return TIPPY_NOT_CONNECTED;
-          }}
-        />
         <JobBar jobs={jobs} onCancel={(job) => void handleCancel(job)} />
       </div>
     </>
