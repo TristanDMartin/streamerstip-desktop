@@ -1,0 +1,93 @@
+name: Desktop test build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/desktop-ci-builds-abb7
+      - cursor/fix-new-project-click-ddb7
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-test-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-aarch64
+            platform: macos-latest
+            rust_targets: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin --bundles dmg
+          - name: macos-x64
+            platform: macos-latest
+            rust_targets: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin --bundles dmg
+          - name: windows-x64
+            platform: windows-latest
+            rust_targets: ""
+            args: --bundles nsis,msi
+          - name: linux-x64
+            platform: ubuntu-24.04
+            rust_targets: ""
+            args: --bundles deb
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Ad-hoc sign macOS bundles
+        if: runner.os == 'macOS'
+        run: echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+
+      - name: Build unsigned installers
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: desktop-test-${{ github.run_id }}
+          releaseName: Tippy Desktop test build ${{ github.run_id }}
+          releaseDraft: false
+          prerelease: true
+          uploadUpdaterJson: false
+          uploadWorkflowArtifacts: true
+          retryAttempts: 3
+          args: ${{ matrix.args }}
+          releaseBody: |
+            Unsigned test build of Tippy Desktop (Phase 0–6). No Apple or Windows signing certificate. macOS bundles are ad-hoc signed (`-`) and are not notarized.
+
+            macOS: open the .dmg, then right-click Tippy Desktop and choose Open. If macOS still blocks it, run `xattr -dr com.apple.quarantine "/Applications/Tippy Desktop.app"`.
+
+            Windows: if SmartScreen says Windows protected your PC, choose More info, then Run anyway.
+
+            Import needs `ffmpeg` and `ffprobe` on PATH. This build does not bundle them.

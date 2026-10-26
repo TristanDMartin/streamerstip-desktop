@@ -146,11 +146,20 @@ export function App() {
   }, [jobs, refreshOpenProject, refreshWorkspace]);
 
   async function handleCreate(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("project name is required");
+      return;
+    }
     setError(null);
-    const created = await createProject(name);
-    setRoute({ name: "project", projectId: created.projectId });
-    setProject(created);
-    await refreshWorkspace();
+    try {
+      const created = await createProject(trimmed);
+      setRoute({ name: "project", projectId: created.projectId });
+      setProject(created);
+      await refreshWorkspace();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function handleOpen(projectId: string) {
@@ -294,6 +303,11 @@ export function App() {
               onClick={() => {
                 if (item.id === "home" || item.id === "create") {
                   setRoute({ name: "home" });
+                }
+                if (item.id === "create") {
+                  window.setTimeout(() => {
+                    document.getElementById("project-name")?.focus();
+                  }, 0);
                 }
                 if (item.id === "projects") {
                   setRoute({ name: "projects" });
