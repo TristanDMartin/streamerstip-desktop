@@ -19,8 +19,8 @@ export function HomeView({
 }: HomeViewProps) {
   return (
     <section className="workspace">
-      <header className="page-head">
-        <p className="eyebrow">Creator hub</p>
+      <header className="home-hero">
+        <p className="brand-signal">StreamersTip</p>
         <h1>What should Tippy help you create today?</h1>
         <p className="lede">{accountLabel}</p>
       </header>
@@ -28,7 +28,9 @@ export function HomeView({
       <button type="button" className="text-button" onClick={onAsk}>
         Ask Tippy
       </button>
-      <ProjectList projects={projects} onOpen={onOpen} />
+      <div className="home-projects">
+        <ProjectList projects={projects} onOpen={onOpen} />
+      </div>
     </section>
   );
 }

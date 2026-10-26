@@ -35,24 +35,28 @@ import {
 import { TIPPY_NOT_CONNECTED, TippyRail } from "./components/TippyRail";
 import { workerCards } from "./lib/team";
 import type { AppMeta, JobListItem, Project, ProjectCard, TimelineEdit } from "./types";
+import { EmptyDestinationView } from "./views/EmptyDestinationView";
 import { HomeView } from "./views/HomeView";
 import { ProjectView } from "./views/ProjectView";
 import { ProjectsView } from "./views/ProjectsView";
 
+type PlaceholderId = "review" | "planner" | "analytics" | "library" | "brand";
+
 type Route =
   | { name: "home" }
   | { name: "projects" }
-  | { name: "project"; projectId: string };
+  | { name: "project"; projectId: string }
+  | { name: "placeholder"; id: PlaceholderId };
 
 const NAV = [
-  { id: "home", label: "Home", icon: IconHome, enabled: true },
-  { id: "projects", label: "Projects", icon: IconProjects, enabled: true },
-  { id: "create", label: "Create", icon: IconPlus, enabled: true },
-  { id: "review", label: "Review", icon: IconReview, enabled: false },
-  { id: "planner", label: "Planner", icon: IconPlanner, enabled: false },
-  { id: "analytics", label: "Analytics", icon: IconAnalytics, enabled: false },
-  { id: "library", label: "Library", icon: IconLibrary, enabled: false },
-  { id: "brand", label: "Brand Kit", icon: IconBrand, enabled: false },
+  { id: "home", label: "Home", icon: IconHome, kind: "route" },
+  { id: "projects", label: "Projects", icon: IconProjects, kind: "route" },
+  { id: "create", label: "Create", icon: IconPlus, kind: "route" },
+  { id: "review", label: "Review", icon: IconReview, kind: "placeholder" },
+  { id: "planner", label: "Planner", icon: IconPlanner, kind: "placeholder" },
+  { id: "analytics", label: "Analytics", icon: IconAnalytics, kind: "placeholder" },
+  { id: "library", label: "Library", icon: IconLibrary, kind: "placeholder" },
+  { id: "brand", label: "Brand Kit", icon: IconBrand, kind: "placeholder" },
 ] as const;
 
 export function App() {
@@ -267,165 +271,174 @@ export function App() {
     meta?.account.label ?? "Waiting for the shared StreamersTip identity contract";
 
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand-lockup">
-          <span className="wordmark">StreamersTip</span>
-          <span className="product-name">Tippy Desktop</span>
-        </div>
-        <input className="search" placeholder="Search" disabled aria-label="Search" />
-        <div className="avatar" title={accountLabel} aria-label={accountLabel}>
-          <IconUser />
-        </div>
-      </header>
-      <nav className="nav" aria-label="Primary">
-        {NAV.map((item) => {
-          const Icon = item.icon;
-          const isCreate = item.id === "create";
-          const active =
-            (item.id === "home" && route.name === "home") ||
-            (item.id === "projects" &&
-              (route.name === "projects" || route.name === "project"));
-          return (
-            <button
-              key={item.id}
-              type="button"
-              className={
-                isCreate
-                  ? "nav-item nav-create"
-                  : active && item.enabled
-                    ? "nav-item active"
-                    : "nav-item"
+    <>
+      <div className="app-atmosphere" aria-hidden="true" />
+      <div className="app-shell">
+        <header className="topbar">
+          <div className="brand-lockup">
+            <span className="wordmark">StreamersTip</span>
+            <span className="product-name">Tippy Desktop</span>
+          </div>
+          <input className="search" placeholder="Search" disabled aria-label="Search" />
+          <div className="avatar" title={accountLabel} aria-label={accountLabel}>
+            <IconUser />
+          </div>
+        </header>
+        <nav className="nav" aria-label="Primary">
+          {NAV.map((item) => {
+            const Icon = item.icon;
+            const isCreate = item.id === "create";
+            const active =
+              (item.id === "home" && route.name === "home") ||
+              (item.id === "projects" &&
+                (route.name === "projects" || route.name === "project")) ||
+              (route.name === "placeholder" && route.id === item.id);
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={
+                  isCreate
+                    ? "nav-item nav-create"
+                    : active
+                      ? "nav-item active"
+                      : "nav-item"
+                }
+                title={item.label}
+                data-testid={`nav-${item.id}`}
+                onClick={() => {
+                  if (item.id === "home" || item.id === "create") {
+                    setRoute({ name: "home" });
+                  }
+                  if (item.id === "create") {
+                    window.setTimeout(() => {
+                      document.getElementById("project-name")?.focus();
+                    }, 0);
+                  }
+                  if (item.id === "projects") {
+                    setRoute({ name: "projects" });
+                  }
+                  if (item.kind === "placeholder") {
+                    setRoute({ name: "placeholder", id: item.id });
+                  }
+                }}
+              >
+                {isCreate ? null : <Icon />}
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
+        <main className="main">
+          {error ? <p className="banner">{error}</p> : null}
+          {route.name === "home" ? (
+            <HomeView
+              projects={projects}
+              accountLabel={accountLabel}
+              onCreate={handleCreate}
+              onOpen={(id) => void handleOpen(id)}
+              onAsk={() => composerRef.current?.focus()}
+            />
+          ) : null}
+          {route.name === "projects" ? (
+            <ProjectsView
+              projects={projects}
+              onCreate={handleCreate}
+              onOpen={(id) => void handleOpen(id)}
+            />
+          ) : null}
+          {route.name === "placeholder" ? (
+            <EmptyDestinationView id={route.id} />
+          ) : null}
+          {route.name === "project" && project ? (
+            <ProjectView
+              project={project}
+              engineReady={meta?.engine.ready ?? false}
+              engineMessage={
+                meta?.engine.message ??
+                "FFmpeg was not found. Install the apt package `ffmpeg`."
               }
-              disabled={!item.enabled}
-              title={item.enabled ? item.label : "Not in this phase"}
-              data-testid={`nav-${item.id}`}
-              onClick={() => {
-                if (item.id === "home" || item.id === "create") {
-                  setRoute({ name: "home" });
+              previewOrigin={meta?.previewOrigin ?? ""}
+              seekToken={seek?.token ?? 0}
+              seekMs={seek?.ms ?? null}
+              onSeek={requestSeek}
+              onImport={handleImport}
+              onExport={handleExport}
+              onCreateShort={handleCreateShort}
+              onPauseJob={async (jobId) => {
+                if (!project) {
+                  return;
                 }
-                if (item.id === "create") {
-                  window.setTimeout(() => {
-                    document.getElementById("project-name")?.focus();
-                  }, 0);
-                }
-                if (item.id === "projects") {
-                  setRoute({ name: "projects" });
-                }
+                setError(null);
+                const next = await pauseJob(project.projectId, jobId);
+                setProject(next);
+                await refreshWorkspace();
               }}
-            >
-              {isCreate ? null : <Icon />}
-              {item.label}
-            </button>
-          );
-        })}
-      </nav>
-      <main className="main">
-        {error ? <p className="banner">{error}</p> : null}
-        {route.name === "home" ? (
-          <HomeView
-            projects={projects}
-            accountLabel={accountLabel}
-            onCreate={handleCreate}
-            onOpen={(id) => void handleOpen(id)}
-            onAsk={() => composerRef.current?.focus()}
-          />
-        ) : null}
-        {route.name === "projects" ? (
-          <ProjectsView
-            projects={projects}
-            onCreate={handleCreate}
-            onOpen={(id) => void handleOpen(id)}
-          />
-        ) : null}
-        {route.name === "project" && project ? (
-          <ProjectView
-            project={project}
-            engineReady={meta?.engine.ready ?? false}
-            engineMessage={
-              meta?.engine.message ??
-              "FFmpeg was not found. Install the apt package `ffmpeg`."
+              onResumeJob={async (jobId) => {
+                if (!project) {
+                  return;
+                }
+                setError(null);
+                const next = await resumeJob(project.projectId, jobId);
+                setProject(next);
+                await refreshWorkspace();
+              }}
+              onCancelJob={async (jobId) => {
+                if (!project) {
+                  return;
+                }
+                setError(null);
+                const next = await cancelJob(project.projectId, jobId);
+                setProject(next);
+                await refreshWorkspace();
+              }}
+              onRetryJob={async (jobId) => {
+                if (!project) {
+                  return;
+                }
+                setError(null);
+                const next = await retryJob(project.projectId, jobId);
+                setProject(next);
+                await refreshWorkspace();
+              }}
+              onUndoShort={handleUndoShort}
+              onAcceptShort={handleAcceptShort}
+              onExportShort={handleExportShort}
+              onEdit={handleEdit}
+            />
+          ) : null}
+        </main>
+        <TippyRail
+          activity={
+            project
+              ? workerCards(project.jobs)
+                  .filter((card) => card.tone !== "done")
+                  .map((card) => ({
+                    id: card.id,
+                    name: card.name,
+                    label: card.label,
+                    tone: card.tone,
+                  }))
+              : []
+          }
+          composerRef={composerRef}
+          onSubmit={async (text) => {
+            const reply = await submitTippy(text, project?.projectId);
+            if (reply.hits[0]) {
+              requestSeek(reply.hits[0].startMs);
             }
-            previewOrigin={meta?.previewOrigin ?? ""}
-            seekToken={seek?.token ?? 0}
-            seekMs={seek?.ms ?? null}
-            onSeek={requestSeek}
-            onImport={handleImport}
-            onExport={handleExport}
-            onCreateShort={handleCreateShort}
-            onPauseJob={async (jobId) => {
-              if (!project) {
-                return;
-              }
-              setError(null);
-              const next = await pauseJob(project.projectId, jobId);
-              setProject(next);
+            if (project) {
+              await refreshOpenProject(project.projectId);
               await refreshWorkspace();
-            }}
-            onResumeJob={async (jobId) => {
-              if (!project) {
-                return;
-              }
-              setError(null);
-              const next = await resumeJob(project.projectId, jobId);
-              setProject(next);
-              await refreshWorkspace();
-            }}
-            onCancelJob={async (jobId) => {
-              if (!project) {
-                return;
-              }
-              setError(null);
-              const next = await cancelJob(project.projectId, jobId);
-              setProject(next);
-              await refreshWorkspace();
-            }}
-            onRetryJob={async (jobId) => {
-              if (!project) {
-                return;
-              }
-              setError(null);
-              const next = await retryJob(project.projectId, jobId);
-              setProject(next);
-              await refreshWorkspace();
-            }}
-            onUndoShort={handleUndoShort}
-            onAcceptShort={handleAcceptShort}
-            onExportShort={handleExportShort}
-            onEdit={handleEdit}
-          />
-        ) : null}
-      </main>
-      <TippyRail
-        activity={
-          project
-            ? workerCards(project.jobs)
-                .filter((card) => card.tone !== "done")
-                .map((card) => ({
-                  id: card.id,
-                  name: card.name,
-                  label: card.label,
-                  tone: card.tone,
-                }))
-            : []
-        }
-        composerRef={composerRef}
-        onSubmit={async (text) => {
-          const reply = await submitTippy(text, project?.projectId);
-          if (reply.hits[0]) {
-            requestSeek(reply.hits[0].startMs);
-          }
-          if (project) {
-            await refreshOpenProject(project.projectId);
-            await refreshWorkspace();
-          }
-          if (reply.handled || reply.connected) {
-            return reply.message;
-          }
-          return TIPPY_NOT_CONNECTED;
-        }}
-      />
-      <JobBar jobs={jobs} onCancel={(job) => void handleCancel(job)} />
-    </div>
+            }
+            if (reply.handled || reply.connected) {
+              return reply.message;
+            }
+            return TIPPY_NOT_CONNECTED;
+          }}
+        />
+        <JobBar jobs={jobs} onCancel={(job) => void handleCancel(job)} />
+      </div>
+    </>
   );
 }
