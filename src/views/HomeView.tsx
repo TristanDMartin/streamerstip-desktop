@@ -18,17 +18,19 @@ export function HomeView({
   onAsk,
 }: HomeViewProps) {
   return (
-    <section className="workspace">
-      <header className="home-hero">
+    <section className="workspace home-workspace">
+      <header className="home-greeting panel">
         <p className="brand-signal">StreamersTip</p>
         <h1>What should Tippy help you create today?</h1>
         <p className="lede">{accountLabel}</p>
       </header>
       <CreateCard onCreate={onCreate} />
-      <button type="button" className="text-button" onClick={onAsk}>
-        Ask Tippy
+      <button type="button" className="ask-strip" onClick={onAsk}>
+        <span className="ask-strip-kicker">Tippy</span>
+        <span className="ask-strip-label">Ask Tippy</span>
+        <span className="ask-strip-hint">Open the companion rail</span>
       </button>
-      <div className="home-projects">
+      <div className="home-projects panel">
         <ProjectList projects={projects} onOpen={onOpen} />
       </div>
     </section>
@@ -95,7 +97,14 @@ export function ProjectList({
 }) {
   return (
     <div className="project-list">
-      <p className="section-label">Projects</p>
+      <div className="recent-head">
+        <p className="section-label">Recent</p>
+        <span className="recent-count">
+          {projects.length === 0
+            ? "Nothing yet"
+            : `${projects.length} project${projects.length === 1 ? "" : "s"}`}
+        </span>
+      </div>
       {projects.length === 0 ? (
         <p className="empty">No projects yet. Create one to import a recording.</p>
       ) : (
