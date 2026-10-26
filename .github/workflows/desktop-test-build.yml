@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - cursor/desktop-ci-builds-abb7
+      - cursor/fix-new-project-click-ddb7
 
 permissions:
   contents: write
