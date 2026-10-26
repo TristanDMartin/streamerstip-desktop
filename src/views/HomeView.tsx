@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 
 import type { ProjectCard } from "../types";
 
@@ -10,6 +10,17 @@ interface HomeViewProps {
   onAsk: () => void;
 }
 
+function greetingLine(): { kicker: string; headline: string } {
+  const hour = new Date().getHours();
+  if (hour < 12) {
+    return { kicker: "Good morning", headline: "You've got this." };
+  }
+  if (hour < 18) {
+    return { kicker: "Good afternoon", headline: "Ready when you are." };
+  }
+  return { kicker: "Good evening", headline: "Let's make something calm." };
+}
+
 export function HomeView({
   projects,
   accountLabel,
@@ -17,20 +28,31 @@ export function HomeView({
   onOpen,
   onAsk,
 }: HomeViewProps) {
+  const greeting = useMemo(() => greetingLine(), []);
   return (
-    <section className="workspace home-workspace">
-      <header className="home-greeting panel">
-        <p className="brand-signal">StreamersTip</p>
-        <h1>What should Tippy help you create today?</h1>
-        <p className="lede">{accountLabel}</p>
+    <section className="home-board" data-testid="home-board">
+      <header className="home-widget home-greeting">
+        <p className="brand-signal">StreamersTip · Tippy</p>
+        <p className="greeting-kicker">{greeting.kicker}</p>
+        <h1>{greeting.headline}</h1>
+        <p className="lede">
+          Tippy stays with you on this machine — create when it feels right.
+        </p>
       </header>
+      <aside className="home-widget home-local">
+        <p className="section-label">On this machine</p>
+        <strong>Local First</strong>
+        <p className="lede">{accountLabel}</p>
+      </aside>
       <CreateCard onCreate={onCreate} />
-      <button type="button" className="ask-strip" onClick={onAsk}>
-        <span className="ask-strip-kicker">Tippy</span>
-        <span className="ask-strip-label">Ask Tippy</span>
-        <span className="ask-strip-hint">Open the companion rail</span>
+      <button type="button" className="home-widget home-ask" onClick={onAsk}>
+        <p className="ask-strip-kicker">Tippy</p>
+        <strong className="ask-strip-label">Ask Tippy</strong>
+        <p className="lede">
+          Moments, Shorts, cleanup — ask from the companion rail anytime.
+        </p>
       </button>
-      <div className="home-projects panel">
+      <div className="home-widget home-projects">
         <ProjectList projects={projects} onOpen={onOpen} />
       </div>
     </section>
@@ -65,8 +87,12 @@ export function CreateCard({
   }
 
   return (
-    <form className="panel create-card" onSubmit={(event) => void submit(event)}>
-      <label htmlFor="project-name">New project</label>
+    <form
+      className="home-widget create-card"
+      onSubmit={(event) => void submit(event)}
+    >
+      <p className="section-label">New project</p>
+      <label htmlFor="project-name">Name your next recording</label>
       <input
         id="project-name"
         data-testid="new-project-name"
@@ -108,21 +134,26 @@ export function ProjectList({
       {projects.length === 0 ? (
         <p className="empty">No projects yet. Create one to import a recording.</p>
       ) : (
-        projects.map((project) => (
-          <button
-            key={project.projectId}
-            type="button"
-            className="project-card"
-            onClick={() => onOpen(project.projectId)}
-          >
-            <strong>{project.name}</strong>
-            <span>
-              {project.error
-                ? project.error
-                : `${project.mediaCount} video${project.mediaCount === 1 ? "" : "s"}`}
-            </span>
-          </button>
-        ))
+        <ul className="recent-list">
+          {projects.map((project) => (
+            <li key={project.projectId}>
+              <button
+                type="button"
+                className="project-card"
+                onClick={() => onOpen(project.projectId)}
+              >
+                <strong>{project.name}</strong>
+                <span>
+                  {project.error
+                    ? project.error
+                    : `${project.mediaCount} video${
+                        project.mediaCount === 1 ? "" : "s"
+                      }`}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

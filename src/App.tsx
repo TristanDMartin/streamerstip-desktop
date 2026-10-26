@@ -289,7 +289,7 @@ export function App() {
             const Icon = item.icon;
             const isCreate = item.id === "create";
             const active =
-              (item.id === "home" && route.name === "home") ||
+              (item.id === "home" && route.name === "home" && !isCreate) ||
               (item.id === "projects" &&
                 (route.name === "projects" || route.name === "project")) ||
               (route.name === "placeholder" && route.id === item.id);
@@ -297,13 +297,13 @@ export function App() {
               <button
                 key={item.id}
                 type="button"
-                className={
-                  isCreate
-                    ? "nav-item nav-create"
-                    : active
-                      ? "nav-item active"
-                      : "nav-item"
-                }
+                className={[
+                  "nav-item",
+                  isCreate ? "nav-create" : "",
+                  active ? "active" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 title={item.label}
                 data-testid={`nav-${item.id}`}
                 onClick={() => {
@@ -323,7 +323,7 @@ export function App() {
                   }
                 }}
               >
-                {isCreate ? null : <Icon />}
+                <Icon />
                 {item.label}
               </button>
             );
