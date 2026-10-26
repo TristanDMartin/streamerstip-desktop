@@ -43,13 +43,21 @@ export function CreateCard({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!name.trim() || isSaving) {
+    if (isSaving) {
+      return;
+    }
+    const trimmed = name.trim();
+    if (!trimmed) {
+      await onCreate("");
       return;
     }
     setIsSaving(true);
-    await onCreate(name.trim());
-    setName("");
-    setIsSaving(false);
+    try {
+      await onCreate(trimmed);
+      setName("");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -64,10 +72,11 @@ export function CreateCard({
         onChange={(event) => setName(event.target.value)}
       />
       <button
-        type="submit"
+        type="button"
         className="primary new-project"
         data-testid="create-project"
         disabled={isSaving}
+        onClick={(event) => void submit(event)}
       >
         New Project
       </button>
