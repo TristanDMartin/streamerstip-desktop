@@ -10,6 +10,7 @@ interface VodPanelProps {
   ownerId: string;
   mode: ProcessingMode;
   activity: ObsObservation;
+  suspendProcessing: boolean;
   replayPath: string;
   replayAuthorized: boolean;
   replaySavedAt: string;
@@ -28,6 +29,7 @@ export function VodPanel({
   ownerId,
   mode,
   activity,
+  suspendProcessing,
   replayPath,
   replayAuthorized,
   replaySavedAt,
@@ -66,6 +68,9 @@ export function VodPanel({
         {decision.downgraded
           ? `Processing stays on ${decision.effectiveMode} (${decision.reasons.join(", ")}).`
           : `Processing is ${decision.effectiveMode}. Policy ${decision.policy}.`}
+        {suspendProcessing
+          ? " Background processing is suspended until CPU and memory stay under the resume line."
+          : " Background processing is allowed by the resource monitor."}
       </p>
       <ol>
         {VOD_STEPS.map((step) => (
@@ -156,6 +161,7 @@ export function VodPanel({
       authorized: authorized && listed.includes(first),
       mode,
       activity: activity ?? EMPTY_ACTIVITY,
+      resources: { suspendProcessing },
       onLine: (line) => setProgress(line),
     });
     if (!result.ok) {
@@ -180,6 +186,7 @@ export function VodPanel({
       selected: true,
       mode,
       activity,
+      resources: { suspendProcessing },
     });
     if (!result.ok) {
       setProgress(result.reason);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { onObsChatCapture } from "../api";
 import { TippyApp, type AppStatus } from "../obs/app";
@@ -10,11 +10,20 @@ import {
   type StoredClip,
 } from "../obs/inventory";
 import { planObsReplayGrant } from "../obs/mediaHandoff";
+import {
+  initialResourceState,
+  rememberResourceLog,
+  resourceSampleFrom,
+  stepResourceMonitor,
+  type HostReading,
+  type ResourceDecision,
+} from "../obs/resourceMonitor";
 import { isProcessingMode, type ObsObservation, type ProcessingMode } from "../obs/scheduler";
 import { obsReadiness } from "../obs/readiness";
 import { VodPanel } from "./VodPanel";
 
 const INVENTORY_KEY = "tippy.obsInventory";
+const RESOURCE_LOG_KEY = "tippy.resourceLog";
 
 interface CaptureViewProps {
   deviceId: string;
@@ -43,6 +52,11 @@ export function CaptureView({ deviceId, chatEnabled, vodEnabled }: CaptureViewPr
   const [hotkeyNote, setHotkeyNote] = useState("Registering the global shortcut.");
   const [mode, setMode] = useState<ProcessingMode>("live");
   const [activity, setActivity] = useState<ObsObservation>(idleObservation);
+  const [resourceNote, setResourceNote] = useState("Processing is suspended until CPU and memory are measured.");
+  const [suspendProcessing, setSuspendProcessing] = useState(true);
+  const resourceState = useRef(initialResourceState());
+  const connected = useRef(false);
+  connected.current = status.connected;
   const [inputName, setInputName] = useState("");
   const [inventory, setInventory] = useState<StoredClip[]>(() => loadInventory());
   const report = obsReadiness(status);
@@ -57,6 +71,13 @@ export function CaptureView({ deviceId, chatEnabled, vodEnabled }: CaptureViewPr
         return [...merged];
       });
     }, 1000);
+    return () => window.clearInterval(timer);
+  }, [app]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void sampleResources(app, connected.current, resourceState, setActivity, setResourceNote, setSuspendProcessing);
+    }, 5000);
     return () => window.clearInterval(timer);
   }, [app]);
 
@@ -312,23 +333,92 @@ export function CaptureView({ deviceId, chatEnabled, vodEnabled }: CaptureViewPr
           type="button"
           className="secondary"
           onClick={() => {
-            void app.outputActivity().then(setActivity).catch(() => setActivity(idleObservation));
+            void sampleResources(app, status.connected, resourceState, setActivity, setResourceNote, setSuspendProcessing);
           }}
         >
           Check OBS output
         </button>
+        <p>{resourceNote}</p>
       </section>
       <VodPanel
         enabled={vodEnabled}
         ownerId={deviceId}
         mode={mode}
         activity={activity}
+        suspendProcessing={suspendProcessing}
         replayPath={inventory.find((item) => item.uploadAuthorized)?.localPath ?? ""}
         replayAuthorized={inventory.some((item) => item.uploadAuthorized)}
         replaySavedAt={new Date(inventory.find((item) => item.uploadAuthorized)?.triggerTimestamp ?? 0).toISOString()}
       />
     </section>
   );
+}
+
+const EMPTY_HOST: HostReading = {
+  cpuPercent: null,
+  memoryPercent: null,
+  gpuUtilPercent: null,
+  vramTotalMb: null,
+  vramUsedMb: null,
+  encoderUtilPercent: null,
+};
+
+async function sampleResources(
+  app: TippyApp,
+  isConnected: boolean,
+  resourceState: { current: ReturnType<typeof initialResourceState> },
+  setActivity: (value: ObsObservation) => void,
+  setResourceNote: (value: string) => void,
+  setSuspendProcessing: (value: boolean) => void,
+): Promise<void> {
+  const host = await readHost();
+  const obs = isConnected ? await app.resourceSample().catch(() => null) : null;
+  if (obs) {
+    setActivity({
+      processDetected: true,
+      streaming: obs.streaming,
+      recording: obs.recording,
+      droppedFrames: obs.droppedFrames,
+      laggedFrames: obs.laggedFrames,
+    });
+  }
+  const stepped = stepResourceMonitor(
+    resourceState.current,
+    resourceSampleFrom(Date.now(), host, obs),
+  );
+  resourceState.current = stepped.state;
+  setSuspendProcessing(stepped.decision.suspendProcessing);
+  setResourceNote(resourceNoteFor(stepped.decision));
+  rememberLocalResourceLog(stepped.logLine);
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("log_resource_decision", { line: stepped.logLine });
+  } catch {
+    // The browser store still has the line when the desktop log command is unavailable.
+  }
+}
+
+function resourceNoteFor(decision: ResourceDecision): string {
+  if (!decision.suspendProcessing) return `Processing can run. Policy ${decision.policy}.`;
+  return `Processing is suspended (${decision.reasons.join(", ")}). Policy ${decision.policy}.`;
+}
+
+async function readHost(): Promise<HostReading> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<HostReading>("host_resources");
+  } catch {
+    return EMPTY_HOST;
+  }
+}
+
+function rememberLocalResourceLog(line: string): void {
+  try {
+    const existing = window.localStorage.getItem(RESOURCE_LOG_KEY) ?? "";
+    window.localStorage.setItem(RESOURCE_LOG_KEY, rememberResourceLog(existing, line));
+  } catch {
+    // The decision is still shown on the page when storage is unavailable.
+  }
 }
 
 function mergeInventory(

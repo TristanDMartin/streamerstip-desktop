@@ -68,9 +68,11 @@ export function planScan(input: {
   mode: ProcessingMode
   activity: ObsObservation
   gpu?: GpuObservation
+  resources?: { suspendProcessing: boolean }
 }): PlanResult {
   const gate = gatePaths(input.enabled, input.paths)
   if (!gate.ok) return gate
+  if (input.resources?.suspendProcessing) return { ok: false, reason: 'resources_suspended' }
   if (!input.authorized) return { ok: false, reason: 'not_authorized' }
   if (!isLocalPath(input.filePath) || !isLocalPath(input.grantPath)) return { ok: false, reason: 'remote_refused' }
   const decision = decideDesktopProcessing({
@@ -103,9 +105,11 @@ export function planEdit(input: {
   mode: ProcessingMode
   activity: ObsObservation
   gpu?: GpuObservation
+  resources?: { suspendProcessing: boolean }
 }): PlanResult {
   const gate = gatePaths(input.enabled, input.paths)
   if (!gate.ok) return gate
+  if (input.resources?.suspendProcessing) return { ok: false, reason: 'resources_suspended' }
   if (!input.selected) return { ok: false, reason: 'not_selected' }
   if (!isLocalPath(input.manifestPath)) return { ok: false, reason: 'remote_refused' }
   const decision = decideDesktopProcessing({

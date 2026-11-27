@@ -192,6 +192,34 @@ export class TippyApp {
     }
   }
 
+  async resourceSample(): Promise<{
+    processDetected: true
+    streaming: boolean
+    recording: boolean
+    droppedFrames: number | null
+    laggedFrames: number | null
+    obsCpuPercent: number | null
+    obsMemoryMb: number | null
+    activeFps: number | null
+    averageFrameRenderTimeMs: number | null
+    outputCongestion: number | null
+  }> {
+    const outputs = await this.session.readOutputActivity()
+    const stats = await this.session.readStats()
+    return {
+      processDetected: true,
+      streaming: outputs.streaming,
+      recording: outputs.recording,
+      droppedFrames: stats.droppedFrames,
+      laggedFrames: stats.laggedFrames,
+      obsCpuPercent: stats.obsCpuPercent,
+      obsMemoryMb: stats.obsMemoryMb,
+      activeFps: stats.activeFps,
+      averageFrameRenderTimeMs: stats.averageFrameRenderTimeMs,
+      outputCongestion: outputs.outputCongestion,
+    }
+  }
+
   async disconnect(): Promise<void> {
     this.keepAlive = false
     this.credentials = null

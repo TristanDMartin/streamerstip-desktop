@@ -36,6 +36,7 @@ export class VodDesk {
     mode: ProcessingMode
     activity: ObsObservation
     gpu?: GpuObservation
+    resources?: { suspendProcessing: boolean }
     onLine?: (line: string) => void
   }): Promise<PlanResult & { result?: SidecarResult }> {
     return this.execute(planScan({ ...input, enabled: this.enabled, paths: this.paths }), input.onLine)
@@ -49,6 +50,7 @@ export class VodDesk {
     mode: ProcessingMode
     activity: ObsObservation
     gpu?: GpuObservation
+    resources?: { suspendProcessing: boolean }
     onLine?: (line: string) => void
   }): Promise<PlanResult & { result?: SidecarResult }> {
     return this.execute(planEdit({ ...input, enabled: this.enabled, paths: this.paths }), input.onLine)

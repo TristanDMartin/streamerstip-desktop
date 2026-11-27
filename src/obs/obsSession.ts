@@ -126,16 +126,36 @@ export class ObsSession {
     return (await this.readStats()).diskFreeMb
   }
 
-  async readStats(): Promise<{ diskFreeMb: number | null; droppedFrames: number | null; laggedFrames: number | null }> {
+  async readStats(): Promise<{
+    diskFreeMb: number | null
+    droppedFrames: number | null
+    laggedFrames: number | null
+    obsCpuPercent: number | null
+    obsMemoryMb: number | null
+    activeFps: number | null
+    averageFrameRenderTimeMs: number | null
+  }> {
     const data = await this.call('GetStats', null, false)
     if (!data || typeof data !== 'object') {
-      return { diskFreeMb: null, droppedFrames: null, laggedFrames: null }
+      return {
+        diskFreeMb: null,
+        droppedFrames: null,
+        laggedFrames: null,
+        obsCpuPercent: null,
+        obsMemoryMb: null,
+        activeFps: null,
+        averageFrameRenderTimeMs: null,
+      }
     }
     const record = data as unknown as Record<string, unknown>
     return {
       diskFreeMb: finiteNumber(record.availableDiskSpace),
       droppedFrames: finiteNumber(record.outputSkippedFrames),
       laggedFrames: finiteNumber(record.renderSkippedFrames),
+      obsCpuPercent: finiteNumber(record.cpuUsage),
+      obsMemoryMb: finiteNumber(record.memoryUsage),
+      activeFps: finiteNumber(record.activeFps),
+      averageFrameRenderTimeMs: finiteNumber(record.averageFrameRenderTime),
     }
   }
 
@@ -167,12 +187,14 @@ export class ObsSession {
     await this.call('StartReplayBuffer', consent, false)
   }
 
-  async readOutputActivity(): Promise<{ streaming: boolean; recording: boolean }> {
+  async readOutputActivity(): Promise<{ streaming: boolean; recording: boolean; outputCongestion: number | null }> {
     const stream = await this.call('GetStreamStatus', null, false)
     const record = await this.call('GetRecordStatus', null, false)
+    const streamRecord = stream && typeof stream === 'object' ? stream as unknown as Record<string, unknown> : {}
     return {
       streaming: outputActive(stream),
       recording: outputActive(record),
+      outputCongestion: finiteNumber(streamRecord.outputCongestion),
     }
   }
 

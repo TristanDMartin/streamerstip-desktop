@@ -18,6 +18,10 @@ export interface MockObsOptions {
   recording?: boolean
   outputSkippedFrames?: number
   renderSkippedFrames?: number
+  outputCongestion?: number
+  activeFps?: number
+  averageFrameRenderTime?: number
+  cpuUsage?: number
 }
 
 interface RequestPayload {
@@ -47,6 +51,10 @@ export class MockObs {
   recording: boolean
   outputSkippedFrames: number
   renderSkippedFrames: number
+  outputCongestion: number
+  activeFps: number
+  averageFrameRenderTime: number
+  cpuUsage: number
   availableDiskSpaceMb: number
   replayPath = ''
   closeOnSave: boolean
@@ -70,6 +78,10 @@ export class MockObs {
     this.recording = options.recording ?? false
     this.outputSkippedFrames = options.outputSkippedFrames ?? 0
     this.renderSkippedFrames = options.renderSkippedFrames ?? 0
+    this.outputCongestion = options.outputCongestion ?? 0
+    this.activeFps = options.activeFps ?? 60
+    this.averageFrameRenderTime = options.averageFrameRenderTime ?? 1
+    this.cpuUsage = options.cpuUsage ?? 1
     this.availableDiskSpaceMb = options.availableDiskSpaceMb ?? 100_000
     this.closeOnSave = options.closeOnSave ?? false
     this.commitThenClose = options.commitThenClose ?? false
@@ -177,11 +189,11 @@ export class MockObs {
     }
     if (requestType === 'GetStats') {
       this.respond(socket, request, true, 100, undefined, {
-        cpuUsage: 1,
+        cpuUsage: this.cpuUsage,
         memoryUsage: 1,
         availableDiskSpace: this.availableDiskSpaceMb,
-        activeFps: 60,
-        averageFrameRenderTime: 1,
+        activeFps: this.activeFps,
+        averageFrameRenderTime: this.averageFrameRenderTime,
         renderSkippedFrames: this.renderSkippedFrames,
         renderTotalFrames: 1,
         outputSkippedFrames: this.outputSkippedFrames,
@@ -196,7 +208,10 @@ export class MockObs {
       return
     }
     if (requestType === 'GetStreamStatus') {
-      this.respond(socket, request, true, 100, undefined, { outputActive: this.streaming })
+      this.respond(socket, request, true, 100, undefined, {
+        outputActive: this.streaming,
+        outputCongestion: this.outputCongestion,
+      })
       return
     }
     if (requestType === 'GetRecordStatus') {

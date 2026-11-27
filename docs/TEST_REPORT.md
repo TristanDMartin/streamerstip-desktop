@@ -15,12 +15,12 @@ cargo +1.91.0 test --locked --manifest-path src-tauri/Cargo.toml --lib
 `npm test` (Vitest 3.2.7) exited 0:
 
 ```
-Test Files  13 passed (13)
-     Tests  51 passed (51)
-  Duration  3.23s
+Test Files  14 passed (14)
+     Tests  55 passed (55)
+  Duration  3.36s
 ```
 
-That includes the existing shell tests (Home, Tippy rail, team, format) and the OBS tests: auth failure, replay off, save, duplicate save, disconnect mid-save, adopt after disconnect, two device ids, audio threshold, chat flag, pre-stream check, reconnect after a dropped socket, no retry after a bad password, the global-shortcut binder, the keychain vault contract, the Path B grant, the VOD stub, the Capture screen render, `tippy.scheduler.v1`, `GetStats` skipped frames, and `tippy.clip-contract.v1`.
+That includes the existing shell tests (Home, Tippy rail, team, format) and the OBS tests: auth failure, replay off, save, duplicate save, disconnect mid-save, adopt after disconnect, two device ids, audio threshold, chat flag, pre-stream check, reconnect after a dropped socket, no retry after a bad password, the global-shortcut binder, the keychain vault contract, the Path B grant, the VOD stub, the Capture screen render, `tippy.scheduler.v1`, `GetStats` skipped frames, `tippy.clip-contract.v1`, and resource-monitor suspend/resume.
 
 ```
 rustc --edition 2021 --test src-tauri/src/http_framing.rs
@@ -28,7 +28,19 @@ rustc --edition 2021 --test src-tauri/src/http_framing.rs
 
 exited 0. 2 passed. A header packet is incomplete until `Content-Length` bytes arrive. One packet still parses.
 
-`cargo test` is BLOCKED on this agent. The locked Tauri crates need Rust 1.90, and the 1.91 build stops because `gdk-3.0` is not installed. The tests inside `src-tauri/src/obs_local.rs` were not executed. The framing test above does not compile the Tauri crate, so it is not a `cargo test` result.
+`cargo +1.91.0 test --locked --manifest-path src-tauri/Cargo.toml --lib` exited 0 after `libgtk-3-dev` 3.24.41 and `libwebkit2gtk-4.1-dev` 2.52.6 were installed:
+
+```
+test result: ok. 65 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.23s
+```
+
+`cargo +1.91.0 build --locked --manifest-path src-tauri/Cargo.toml` exited 0:
+
+```
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.13s
+```
+
+That run includes `sidecar.rs`, the empty-secret keychain test, the global-shortcut plugin link test, `obs_local.rs`, and `http_framing.rs`. It does not open the OS keychain and it does not register the shortcut with the OS. `apt-get` still reported exit 100 because `fuse3` and `xdg-desktop-portal` failed to configure. Those packages are not required for this build. `pkg-config` reports `gdk-3.0` 3.24.41 and `webkit2gtk-4.1` 2.52.6.
 
 ## Section 4B
 
@@ -49,6 +61,7 @@ exited 0. 2 passed. A header packet is incomplete until `Content-Length` bytes a
 | Path B handoff to tippy-media | PASS as a local grant. The pipeline was not called |
 | VOD sidecar plan | PASS for argv, cancel, and the flag. The Node process was not spawned |
 | Processing mode | PASS for `tippy.scheduler.v1`. Streaming, recording, dropped frames, or lagged frames force Live. OBS open and idle drops Performance to Balanced. A real GPU was not measured |
+| Resource monitor | PASS for suspend, hysteresis, and resume in Vitest, and for the host parsers in `cargo test`. A live OBS workload was not measured |
 | Clip contract | PASS. Path A cannot enter editing. Paths B and C stay out of the inbox while `tippy_creator_inbox_enabled` is off |
 | OBS stream and record status | PASS against a mock, including `GetStats` skipped frames. A real OBS output was not read |
 | VOD intelligence screen | PASS as a flagged UI. The scanner and pipeline were not executed |
@@ -73,3 +86,31 @@ Node 20+, Rust 1.90+, and the Tauri Linux or desktop system libraries the existi
 8. The StreamersTip clips dashboard and Mux should not change.
 
 On two PCs, run Tippy Desktop on the PC where OBS is recording.
+
+Windows install commands, versions, and the side-by-side checkout of PR #10, PR #84, and PR #83 are in `docs/WINDOWS_BUILD_AND_DEVICE_TEST.md`.
+
+## Device workload
+
+BLOCKED until Tristan runs this on the streaming PC and the gaming PC. Do not mark these rows passed from a mock, this agent, or CI.
+
+Use one repeated scene, about 10 minutes, with OBS streaming and recording. Keep the game on the gaming PC. Read the OBS log at `%APPDATA%\obs-studio\logs` and search for `audio buffering`, `encoding overloaded`, and a failed or stopped recording. Read skipped frames, lagged frames, congestion, and active FPS from OBS Stats. Read memory from Task Manager and from `resource-monitor.jsonl`. Read gameplay FPS from the game or RTSS on the gaming PC. Copy the resource log at `%APPDATA%\com.streamerstip.desktop\logs\resource-monitor.jsonl`.
+
+1. Processing off: `desktopVodIntelligence` false. Do not scan or edit.
+2. Live: set the flag true, choose Live, and leave the scanner idle except for detection and capture.
+3. Balanced: same scene, one selected sample only if the resource line says processing can run.
+4. Performance: same scene. If the monitor suspends, leave it suspended and record that. Do not force the encode.
+
+Turn the flag off when the four runs are done. Do not upload the recordings.
+
+| Measure | Off | Live | Balanced | Performance |
+| --- | --- | --- | --- | --- |
+| Dropped frames (output skipped, delta) | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
+| Render lag (render skipped, delta) | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
+| Encoding overload (OBS log and encoder %) | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
+| Audio buffering lines in the OBS log | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
+| Recording failures | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
+| Memory (host % peak, OBS MB) | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
+| Gameplay FPS (avg and 1% low) | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
+| Resource monitor phase at the end | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
+
+Date, OBS version, NVIDIA driver, and the two PC names: BLOCKED.

@@ -73,3 +73,36 @@ fn is_scanner_cli(path: &str) -> bool {
     let absolute = path.starts_with('/') || (path.len() > 2 && path.as_bytes()[1] == b':');
     absolute && path.replace('\\', "/").ends_with("services/tippy-vod-scanner/src/cli.ts")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::validate;
+
+    #[test]
+    fn refuses_a_shell_a_relative_cli_and_a_remote_argument() {
+        let cli = "C:/src/streamerstipReact/services/tippy-vod-scanner/src/cli.ts".to_string();
+        let ok_args = vec!["--experimental-strip-types".to_string(), cli.clone(), "scan".to_string()];
+        assert_eq!(validate("cmd.exe", &ok_args).unwrap_err(), "bad_node");
+        let relative = vec![
+            "--experimental-strip-types".to_string(),
+            "services/tippy-vod-scanner/src/cli.ts".to_string(),
+            "scan".to_string(),
+        ];
+        assert_eq!(validate("node", &relative).unwrap_err(), "bad_cli");
+        let mut remote = ok_args.clone();
+        remote.push("https://twitch.tv/example".to_string());
+        assert_eq!(validate("node", &remote).unwrap_err(), "remote_refused");
+    }
+
+    #[test]
+    fn accepts_node_and_the_scanner_commands_without_spawning() {
+        let args = vec![
+            "--experimental-strip-types".to_string(),
+            "/opt/streamerstipReact/services/tippy-vod-scanner/src/cli.ts".to_string(),
+            "edit".to_string(),
+        ];
+        assert!(validate("node", &args).is_ok());
+        assert!(validate("/usr/local/bin/node", &args).is_ok());
+        assert!(validate("C:/Program Files/nodejs/node.exe", &args).is_ok());
+    }
+}

@@ -14,6 +14,7 @@ mod obs_local;
 mod preview;
 mod project;
 mod runtime;
+mod resources;
 mod scout;
 mod service;
 mod sidecar;
@@ -302,6 +303,17 @@ fn sidecar_wait(id: String) -> Result<String, String> {
     sidecar::wait(&id)
 }
 
+#[tauri::command]
+fn host_resources() -> resources::HostResources {
+    resources::read_host_metrics()
+}
+
+#[tauri::command]
+fn log_resource_decision(state: State<AppState>, line: String) -> Result<(), String> {
+    let path = state.log_path.with_file_name("resource-monitor.jsonl");
+    resources::append_decision(&path, &line)
+}
+
 fn data_dir(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
     if let Ok(path) = std::env::var("TIPPY_DATA_DIR") {
         if !path.trim().is_empty() {
@@ -389,8 +401,20 @@ pub fn run() {
             keychain_clear,
             sidecar_start,
             sidecar_cancel,
-            sidecar_wait
+            sidecar_wait,
+            host_resources,
+            log_resource_decision
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tippy Desktop");
+}
+
+#[cfg(test)]
+mod hotkey_tests {
+    #[test]
+    fn the_global_shortcut_plugin_is_linked_and_is_not_registered_here() {
+        let builder = tauri_plugin_global_shortcut::Builder::<tauri::Wry>::new();
+        let _ = builder;
+        assert_eq!(crate::resources::CAPTURE_ACCELERATOR, "CommandOrControl+Shift+F9");
+    }
 }
