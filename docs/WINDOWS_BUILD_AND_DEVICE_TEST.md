@@ -51,57 +51,9 @@ ffmpeg -encoders | findstr nvenc
 
 `nvidia-smi` must show driver 610.00 or newer before an NVENC encode. Tippy Desktop itself still calls the non-NVENC `ffmpeg` on `PATH`.
 
-## Check out the three branches
-
-PR #10 is this repo. PR #84 (`cursor/tippy-vod-scanner-fcb2`) is stacked on PR #83 (`cursor/tippy-media-pipeline`). Use two clones so neither branch has to carry the other repo.
-
-```powershell
-git clone https://github.com/TristanDMartin/streamerstip-desktop.git
-cd streamerstip-desktop
-git fetch origin cursor/obs-replay-prototype-a23e
-git checkout cursor/obs-replay-prototype-a23e
-
-cd ..
-git clone https://github.com/TristanDMartin/streamerstipReact.git
-cd streamerstipReact
-git fetch origin cursor/tippy-vod-scanner-fcb2 cursor/tippy-media-pipeline
-git worktree add ..\tippy-vod cursor/tippy-vod-scanner-fcb2
-git worktree add ..\tippy-media cursor/tippy-media-pipeline
-```
-
-Confirm these files exist:
-
-- `..\tippy-vod\services\tippy-vod-scanner\src\cli.ts`
-- `..\tippy-media\services\tippy-media\src\scheduler.ts`
-
-If `scheduler.ts` is also on the VOD worktree, that checkout already contains PR #83. Keep the media worktree anyway so the policy file you read is the PR #83 branch.
-
-## Build and run
-
-From `streamerstip-desktop`, in the VS 2022 x64 prompt:
-
-```powershell
-npm ci
-npm test
-cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
-npm run build
-cargo build --locked --manifest-path src-tauri/Cargo.toml
-npm run tauri dev
-```
-
-Leave `desktopVodIntelligence` false for the first launch. Capture must not spawn Node. Nothing is uploaded.
-
-The scanner command, used only in the flagged device runs, is:
-
-```text
-node --experimental-strip-types <absolute path>\tippy-vod\services\tippy-vod-scanner\src\cli.ts
-```
-
-Point the Capture "Scanner CLI" field at that `cli.ts`. The work folder must be outside the recording folder.
-
 ## Resource monitor
 
-OBS being open is not treated as free CPU, RAM, GPU, or encoder time. Every 5 seconds Capture reads host CPU and memory, `nvidia-smi` when it is installed, and OBS `GetStats` / stream status when the socket is up. Processing suspends when any suspend line is crossed. It resumes only after every resume line has held for 10 seconds. The first CPU sample can be empty, so the first line may say `not_measured`.
+OBS being open is not treated as free CPU, RAM, GPU, or encoder time. Every 5 seconds Capture reads host CPU and memory, `nvidia-smi` when it is installed, and OBS `GetStats` plus stream status when the socket is up. Processing suspends when any suspend line is crossed. It resumes only after every resume line has held for 10 seconds. The first CPU sample can be empty, so the first line may say `not_measured`.
 
 | Signal | Suspend | Resume |
 | --- | --- | --- |
@@ -122,28 +74,187 @@ Decisions are one JSON object per line, policy `tippy.resource-monitor.v1`. Each
 
 `GetStats.renderSkippedFrames` is frames missed because rendering lagged. `GetStats.outputSkippedFrames` is frames skipped because the encoder lagged. OBS does not put network drops on `GetStats`. Those are `GetStreamStatus.outputSkippedFrames` (`obs_output_get_frames_dropped`). The monitor stores that third counter on its own and does not treat it as CPU or GPU overload.
 
-## Streaming PC checklist (RTX 3060)
+## Runbook for the streaming PC (RTX 3060)
 
-This is the validation script for the streaming PC. The GPU for this script is an RTX 3060. Do not run it on the gaming PC. Every result stays `BLOCKED` until Tristan writes what the PC actually did. A mock, this agent, and CI do not fill these cells. No live Twitch. No uploads. Leave `desktopVodIntelligence` off except where a step says to turn it on, then turn it off again.
+Founder-approved controlled test on the streaming PC only. The GPU for this script is an RTX 3060. Do not run it on the gaming PC. No live Twitch. No uploads. Do not start a stream to Twitch. `desktopVodIntelligence` stays false. Fill the Result line on each step. Leave `BLOCKED` if you skip it. A mock, CI, and this agent do not fill these lines.
 
-Record the commit, OBS version, `nvidia-smi` driver, and the three frame counters from the latest `resource-monitor.jsonl` line.
+Open "x64 Native Tools Command Prompt for VS 2022" for every `cargo` command. PowerShell is fine for `git`, `winget`, and the log reads.
 
-| Step | Do this | Result |
-| --- | --- | --- |
-| Install and launch | Install the versions above. `npm ci`, `npm test`, `cargo test --locked --manifest-path src-tauri/Cargo.toml --lib`, `npm run build`, `cargo build --locked --manifest-path src-tauri/Cargo.toml`, then `npm run tauri dev`. Tippy Desktop opens. | BLOCKED |
-| OBS WebSocket connect | In OBS, enable the WebSocket server on `127.0.0.1:4455`. In Capture, connect to that host and port. The status line names the OBS version. | BLOCKED |
-| Auth | Use the OBS WebSocket password. A wrong password stays disconnected and does not retry. The correct password connects. The password is not shown in the status line. | BLOCKED |
-| Replay buffer status | Start the replay buffer in OBS. The pre-stream check lists the buffer as ready. Stop it and confirm the check says it is off, then start it again before the next step. | BLOCKED |
-| Manual replay capture | With no chat, click Save moment. A local file path appears and the size is greater than 0. Leave “I authorize local editing of this save” unchecked for this step. | BLOCKED |
-| Audio trigger | Calibrate 3 seconds, then turn on the audio spike. One loud moment saves once. A quiet stretch does not save again. | BLOCKED |
-| Chat trigger, simulated first | Turn `desktopChatReplay` on in `flags.json` and restart. Click Simulate chat event. One local save uses trigger `chat`. Click it again and it does not save a second file. Do not connect Twitch and do not POST to Twitch. Turn the flag off when finished. | BLOCKED |
-| Local clip inventory | The saved rows stay on this PC. The upload checkbox stays unchecked. Nothing is sent to Mux. | BLOCKED |
-| Live / Balanced / Performance | With OBS streaming or recording, Live is the effective mode. With OBS open and idle, Performance steps down to Balanced. With OBS closed, Performance can stay Performance. Read the mode line in Capture. | BLOCKED |
-| Resource-pressure detection | While streaming, open `resource-monitor.jsonl`. Confirm `renderLagFrames`, `encodingLagFrames`, and `networkDroppedFrames` are three fields. Note the RTX 3060 driver from `nvidia-smi`. | BLOCKED |
-| Suspend | Raise render lag or encoding lag (or cross a CPU, GPU, VRAM, or encoder line). The next line says processing is suspended. Save moment still saves. Scan and edit do not start. | BLOCKED |
-| Recover | Hold the resume lines, including no new render-lag or encoding-lag frames, for 10 seconds. The line says processing can run. A network-drop increase by itself does not suspend and sets `networkCondition` to `network_drops`. | BLOCKED |
-| Disconnect / reconnect | Stop the OBS WebSocket server, then start it with the same password. Capture reconnects without a second SaveReplayBuffer. A disconnect during Save moment is marked ambiguous and is not retried as a new save. | BLOCKED |
-| Authorization revocation | Check “I authorize local editing of this replay”, then uncheck it. The grant’s `revokedAt` is set. Sending that replay to editing is refused. Path A and an unchecked row stay refused. | BLOCKED |
+### 1. Install and launch
+
+Paste the Rust, MSVC, WebView2, and `nvidia-smi` commands in Dependencies. Then:
+
+```powershell
+cd $env:USERPROFILE
+git clone https://github.com/TristanDMartin/streamerstip-desktop.git
+cd streamerstip-desktop
+git fetch origin cursor/obs-replay-prototype-a23e
+git checkout cursor/obs-replay-prototype-a23e
+git rev-parse HEAD
+npm ci
+npm test
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
+npm run build
+cargo build --locked --manifest-path src-tauri/Cargo.toml
+npm run tauri dev
+```
+
+`git rev-parse HEAD` should print `5e48bc923aba99b0b63ca86a015cbf15a222da50` or a later commit on this same branch. Tippy Desktop opens. Open Capture in the sidebar. The first line under Capture says replays stay on this PC.
+
+The first launch creates `%APPDATA%\com.streamerstip.desktop\flags.json`. Do not set `TIPPY_DATA_DIR`.
+
+Result: BLOCKED
+
+### 2. OBS WebSocket connect
+
+In OBS: Tools, WebSocket Server Settings. Enable the WebSocket server. Server port `4455`. Enable authentication and set a password. Leave the server on this computer. Do not open it to the network. Show the Start Replay Buffer button in the OBS dock if it is hidden.
+
+In Capture, under OBS WebSocket, Host is already `127.0.0.1` and Port is already `4455`. Leave them. Click Connect only after the next step has the password.
+
+Result: BLOCKED
+
+### 3. Auth
+
+Type a wrong password. Click Connect. The status line stays disconnected and does not say Reconnected. The password is not printed there.
+
+Clear the field, type the real OBS password, and click Connect. The status line starts with `Connected to OBS` and includes the OBS version. Pre-stream check shows `Ready · OBS WebSocket authenticated`.
+
+Result: BLOCKED
+
+### 4. Replay buffer status
+
+In OBS, start the replay buffer. Within a few seconds the pre-stream check shows `Ready · Replay buffer is on. Ready to save`.
+
+Stop the replay buffer in OBS. The same row becomes `Not ready · Replay buffer is on`. Start the buffer again before the next step.
+
+Result: BLOCKED
+
+### 5. Manual replay capture
+
+Under Save moment, leave “I authorize local editing of this save” unchecked. Click Save moment. Do not use chat. Under On this PC, a row appears with trigger `manual`, a size greater than 0, and a local path. The upload checkbox on that row stays unchecked.
+
+Result: BLOCKED
+
+### 6. Audio trigger
+
+Under Audio spike, set OBS input name to the mic name OBS shows (the placeholder is `Mic/Aux`). Click Calibrate 3 seconds and stay quiet. Then check Turn on the audio spike. Make one loud sound. One new row appears. Stay quiet for several seconds. No second row appears from silence.
+
+Result: BLOCKED
+
+### 7. Chat trigger, simulated first
+
+Quit Tippy Desktop. Do not connect Twitch.
+
+```powershell
+$flags = "$env:APPDATA\com.streamerstip.desktop\flags.json"
+$json = Get-Content $flags -Raw | ConvertFrom-Json
+$json.desktopChatReplay = $true
+$json.desktopVodIntelligence = $false
+$json | ConvertTo-Json | Set-Content $flags -Encoding utf8
+Get-Content $flags
+```
+
+Start the app again with `npm run tauri dev`. Open Capture. On this PC says `Chat replay is on` and `Twitch chat is not read here`. Click Simulate chat event once. A row appears with trigger `chat`. Click Simulate chat event again. No second chat row appears.
+
+Quit the app and set the flag back off:
+
+```powershell
+$flags = "$env:APPDATA\com.streamerstip.desktop\flags.json"
+$json = Get-Content $flags -Raw | ConvertFrom-Json
+$json.desktopChatReplay = $false
+$json | ConvertTo-Json | Set-Content $flags -Encoding utf8
+```
+
+Start the app again before the next step.
+
+Result: BLOCKED
+
+### 8. Local clip inventory
+
+Under On this PC, the manual, audio, and chat rows are still listed with local paths. Leave “I authorize uploading this replay later” unchecked on every row. The line says `0 selected for a later upload. This build does not send them.` Mux and Twitch are unchanged.
+
+Result: BLOCKED
+
+### 9. Live, Balanced, and Performance
+
+Connect to OBS again. Under Settings, the Processing menu has Live, Balanced, and Performance. Under VOD intelligence the sentence names the effective mode.
+
+- OBS is streaming or recording, menu set to Performance: the sentence says processing stays on `live`.
+- OBS is open, not streaming and not recording, menu set to Performance: the sentence says processing stays on `balanced`.
+- Disconnect from OBS, menu set to Performance: the sentence says `Processing is performance`.
+
+Do not turn `desktopVodIntelligence` on. Do not click Scan or Send selected.
+
+Result: BLOCKED
+
+### 10. Resource-pressure detection
+
+Leave Capture open and connected for at least 10 seconds. Then:
+
+```powershell
+Get-Content "$env:APPDATA\com.streamerstip.desktop\logs\resource-monitor.jsonl" -Tail 1
+nvidia-smi
+```
+
+The JSON line contains `renderLagFrames`, `encodingLagFrames`, and `networkDroppedFrames` as three separate numbers, plus `policy` `tippy.resource-monitor.v1`. `nvidia-smi` names the RTX 3060. Write the driver version and the three numbers on this result line.
+
+`renderLagFrames` is OBS `GetStats.renderSkippedFrames` (rendering). `encodingLagFrames` is OBS `GetStats.outputSkippedFrames` (encoder). `networkDroppedFrames` is OBS `GetStreamStatus.outputSkippedFrames` (network). OBS does not put network drops on `GetStats`.
+
+Result: BLOCKED
+
+### 11. Suspend
+
+While connected, put enough load on the RTX 3060 that OBS Stats shows new skipped frames from rendering or from the encoder, or CPU, GPU, VRAM, or encoder use crosses the suspend line in the table above. Within about 5 seconds the Settings note says `Processing is suspended`. Click Save moment. A local save still appears. Do not click Scan or Send selected.
+
+Result: BLOCKED
+
+### 12. Recover
+
+Ease the load until render lag and encoding lag stop increasing and the resume lines in the table above hold. Wait 10 seconds. The note says `Processing can run`.
+
+If only network-dropped frames increase, the note still says processing can run, and the JSON line has `"networkCondition":"network_drops"`. That increase is not a CPU or GPU overload and does not suspend processing.
+
+Result: BLOCKED
+
+### 13. Disconnect and reconnect
+
+In OBS, disable the WebSocket server. The Capture status line reports the drop. Enable the server again with the same password. The status line says `Reconnected` and does not save a second replay by itself.
+
+Optional: click Save moment and disable the WebSocket server before the save finishes. The status line marks that save ambiguous. Reconnect. Tippy adopts the file OBS already wrote and does not call Save Replay Buffer a second time for that attempt.
+
+Result: BLOCKED
+
+### 14. Authorization revocation
+
+On one inventory row, check “I authorize local editing of this replay”, then uncheck it. Under VOD intelligence, type `loud_reaction` in Replay category and click Send checked replay. The progress line reads `not_authorized`. Nothing is uploaded. Leave every upload checkbox unchecked. Quit with `desktopChatReplay` and `desktopVodIntelligence` both false.
+
+Result: BLOCKED
+
+## Side-by-side scanner checkout
+
+Only if a later flagged run needs the scanner. This controlled pass leaves `desktopVodIntelligence` off, so skip this section unless the founder asks for it.
+
+```powershell
+cd $env:USERPROFILE
+git clone https://github.com/TristanDMartin/streamerstipReact.git
+cd streamerstipReact
+git fetch origin cursor/tippy-vod-scanner-fcb2 cursor/tippy-media-pipeline
+git worktree add ..\tippy-vod cursor/tippy-vod-scanner-fcb2
+git worktree add ..\tippy-media cursor/tippy-media-pipeline
+```
+
+Confirm these files exist:
+
+- `$env:USERPROFILE\tippy-vod\services\tippy-vod-scanner\src\cli.ts`
+- `$env:USERPROFILE\tippy-media\services\tippy-media\src\scheduler.ts`
+
+The scanner command, used only after the founder turns the VOD flag on, is:
+
+```text
+node --experimental-strip-types $env:USERPROFILE\tippy-vod\services\tippy-vod-scanner\src\cli.ts
+```
+
+Point the Capture Scanner CLI field at that `cli.ts`. The work folder must be outside the recording folder. Turn the flag off when that run ends.
 
 ## Device runs
 
