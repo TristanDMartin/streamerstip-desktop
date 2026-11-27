@@ -174,6 +174,10 @@ export class TippyApp {
     }
   }
 
+  async outputActivity(): Promise<{ streaming: boolean; recording: boolean }> {
+    return this.session.readOutputActivity()
+  }
+
   async disconnect(): Promise<void> {
     this.keepAlive = false
     this.credentials = null

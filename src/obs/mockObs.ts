@@ -14,6 +14,8 @@ export interface MockObsOptions {
   commitThenClose?: boolean
   omitRequests?: string[]
   platform?: string
+  streaming?: boolean
+  recording?: boolean
 }
 
 interface RequestPayload {
@@ -39,6 +41,8 @@ export class MockObs {
   obsVersion: string
   obsWebSocketVersion: string
   replayActive: boolean
+  streaming: boolean
+  recording: boolean
   availableDiskSpaceMb: number
   replayPath = ''
   closeOnSave: boolean
@@ -58,6 +62,8 @@ export class MockObs {
     this.obsVersion = options.obsVersion ?? '33.0.3'
     this.obsWebSocketVersion = options.obsWebSocketVersion ?? '5.5.2'
     this.replayActive = options.replayActive ?? true
+    this.streaming = options.streaming ?? false
+    this.recording = options.recording ?? false
     this.availableDiskSpaceMb = options.availableDiskSpaceMb ?? 100_000
     this.closeOnSave = options.closeOnSave ?? false
     this.commitThenClose = options.commitThenClose ?? false
@@ -181,6 +187,14 @@ export class MockObs {
     }
     if (requestType === 'GetReplayBufferStatus') {
       this.respond(socket, request, true, 100, undefined, { outputActive: this.replayActive })
+      return
+    }
+    if (requestType === 'GetStreamStatus') {
+      this.respond(socket, request, true, 100, undefined, { outputActive: this.streaming })
+      return
+    }
+    if (requestType === 'GetRecordStatus') {
+      this.respond(socket, request, true, 100, undefined, { outputActive: this.recording })
       return
     }
     if (requestType === 'GetLastReplayBufferReplay') {

@@ -157,6 +157,15 @@ export class ObsSession {
     await this.call('StartReplayBuffer', consent, false)
   }
 
+  async readOutputActivity(): Promise<{ streaming: boolean; recording: boolean }> {
+    const stream = await this.call('GetStreamStatus', null, false)
+    const record = await this.call('GetRecordStatus', null, false)
+    return {
+      streaming: outputActive(stream),
+      recording: outputActive(record),
+    }
+  }
+
   async setAudioSubscription(on: boolean): Promise<void> {
     if (!this.socketUp) throw new CaptureError('disconnected', 'OBS is not connected.')
     const eventSubscriptions = on
@@ -253,6 +262,10 @@ export class ObsSession {
     this.version = null
     await withTimeout(this.obs.disconnect(), 2000, new CaptureError('disconnected', 'Disconnect timed out.')).catch(() => undefined)
   }
+}
+
+function outputActive(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && (value as { outputActive?: unknown }).outputActive === true
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, error: CaptureError): Promise<T> {

@@ -64,6 +64,8 @@ export function assertAllowlist(server: MockObs): void {
     'GetLastReplayBufferReplay',
     'SaveReplayBuffer',
     'StartReplayBuffer',
+    'GetStreamStatus',
+    'GetRecordStatus',
   ])
   for (const name of server.requests) assert.ok(allowed.has(name), name)
 }

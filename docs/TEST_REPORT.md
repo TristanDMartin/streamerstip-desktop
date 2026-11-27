@@ -15,8 +15,8 @@ cargo +1.91.0 test --locked --manifest-path src-tauri/Cargo.toml --lib
 `npm test` (Vitest 3.2.7) exited 0:
 
 ```
-Test Files  11 passed (11)
-     Tests  42 passed (42)
+Test Files  12 passed (12)
+     Tests  48 passed (48)
   Duration  3.22s
 ```
 
@@ -47,7 +47,10 @@ exited 0. 2 passed. A header packet is incomplete until `Content-Length` bytes a
 | Disconnect recovery | PASS |
 | StreamersTip token in the OS keychain | PASS for the vault contract. The OS keychain call is BLOCKED |
 | Path B handoff to tippy-media | PASS as a local grant. The pipeline was not called |
-| VOD intelligence stub | PASS as a flagged UI. The scanner was not run |
+| VOD sidecar plan | PASS for argv, cancel, and the flag. The Node process was not spawned |
+| Processing mode | PASS. Performance drops to Live while OBS output is active |
+| OBS stream and record status | PASS against a mock. A real OBS output was not read |
+| VOD intelligence screen | PASS as a flagged UI. The scanner and pipeline were not executed |
 | Pre-stream check | PASS. A second search still found no StreamReady module |
 | Windows OBS | NOT RUN |
 | macOS OBS | NOT RUN |

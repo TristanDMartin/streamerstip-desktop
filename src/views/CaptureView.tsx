@@ -9,8 +9,10 @@ import {
   setUploadAuthorization,
   type StoredClip,
 } from "../obs/inventory";
-import { planObsReplayGrant, planVodScan, VOD_STEPS } from "../obs/mediaHandoff";
+import { planObsReplayGrant } from "../obs/mediaHandoff";
+import { isProcessingMode, type ProcessingMode } from "../obs/processingMode";
 import { obsReadiness } from "../obs/readiness";
+import { VodPanel } from "./VodPanel";
 
 const INVENTORY_KEY = "tippy.obsInventory";
 
@@ -31,7 +33,8 @@ export function CaptureView({ deviceId, chatEnabled, vodEnabled }: CaptureViewPr
   const [port, setPort] = useState(4455);
   const [consent, setConsent] = useState(false);
   const [hotkeyNote, setHotkeyNote] = useState("Registering the global shortcut.");
-  const [vodNote, setVodNote] = useState("VOD scan has not run.");
+  const [mode, setMode] = useState<ProcessingMode>("live");
+  const [activity, setActivity] = useState({ streaming: false, recording: false });
   const [inputName, setInputName] = useState("");
   const [inventory, setInventory] = useState<StoredClip[]>(() => loadInventory());
   const report = obsReadiness(status);
@@ -282,34 +285,43 @@ export function CaptureView({ deviceId, chatEnabled, vodEnabled }: CaptureViewPr
             ))}
         </ul>
       </section>
-      <section className="panel" data-testid="vod-stub">
-        <h2>VOD intelligence</h2>
-        <p>
-          {vodEnabled
-            ? "The local scanner is flagged on. This screen does not scan or upload."
-            : "desktopVodIntelligence is off. The steps below stay in this app and do not run."}
-        </p>
-        <ol>
-          {VOD_STEPS.map((step) => (
-            <li key={step}>{step}</li>
-          ))}
-        </ol>
+      <section className="panel" data-testid="processing-mode">
+        <h2>Settings</h2>
+        <label>
+          Processing
+          <select
+            value={mode}
+            onChange={(event) => {
+              if (isProcessingMode(event.target.value)) setMode(event.target.value);
+            }}
+          >
+            <option value="live">Live</option>
+            <option value="balanced">Balanced</option>
+            <option value="performance">Performance</option>
+          </select>
+        </label>
         <button
           type="button"
           className="secondary"
           onClick={() => {
-            const plan = planVodScan("", vodEnabled);
-            setVodNote(
-              "ok" in plan
-                ? "Scan stays off. No file is read and nothing is uploaded."
-                : "A local scan is prepared. It does not run and nothing is uploaded.",
-            );
+            void app.outputActivity().then(setActivity).catch(() => setActivity({
+              streaming: false,
+              recording: false,
+            }));
           }}
         >
-          Scan
+          Check OBS output
         </button>
-        <p>{vodNote}</p>
       </section>
+      <VodPanel
+        enabled={vodEnabled}
+        ownerId={deviceId}
+        mode={mode}
+        activity={activity}
+        replayPath={inventory.find((item) => item.uploadAuthorized)?.localPath ?? ""}
+        replayAuthorized={inventory.some((item) => item.uploadAuthorized)}
+        replaySavedAt={new Date(inventory.find((item) => item.uploadAuthorized)?.triggerTimestamp ?? 0).toISOString()}
+      />
     </section>
   );
 }

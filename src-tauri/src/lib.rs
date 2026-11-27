@@ -16,6 +16,7 @@ mod project;
 mod runtime;
 mod scout;
 mod service;
+mod sidecar;
 mod shorts;
 mod speech;
 mod team;
@@ -286,6 +287,21 @@ fn keychain_clear(service: String, account: String) -> Result<(), String> {
     keychain::clear(&service, &account)
 }
 
+#[tauri::command]
+fn sidecar_start(program: String, args: Vec<String>) -> Result<String, String> {
+    sidecar::start(&program, &args)
+}
+
+#[tauri::command]
+fn sidecar_cancel(id: String) -> Result<(), String> {
+    sidecar::cancel(&id)
+}
+
+#[tauri::command]
+fn sidecar_wait(id: String) -> Result<String, String> {
+    sidecar::wait(&id)
+}
+
 fn data_dir(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
     if let Ok(path) = std::env::var("TIPPY_DATA_DIR") {
         if !path.trim().is_empty() {
@@ -370,7 +386,10 @@ pub fn run() {
             stat_local_replay,
             keychain_save,
             keychain_load,
-            keychain_clear
+            keychain_clear,
+            sidecar_start,
+            sidecar_cancel,
+            sidecar_wait
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tippy Desktop");

@@ -2,7 +2,11 @@ import { REQUIRED_OBS_REQUESTS } from './constants'
 import { blockedRequestMessage, consentRequiredMessage, incompatibleMessage, NOT_LOCAL_MESSAGE } from './messages'
 import { CaptureError } from './errors'
 
-const READ_REQUESTS = new Set<string>(REQUIRED_OBS_REQUESTS.filter((name) => name !== 'SaveReplayBuffer'))
+const READ_REQUESTS = new Set<string>([
+  ...REQUIRED_OBS_REQUESTS.filter((name) => name !== 'SaveReplayBuffer'),
+  'GetStreamStatus',
+  'GetRecordStatus',
+])
 const SAVE_REQUESTS = new Set<string>(['SaveReplayBuffer'])
 const CONSENT_REQUESTS = new Set<string>(['StartReplayBuffer'])
 

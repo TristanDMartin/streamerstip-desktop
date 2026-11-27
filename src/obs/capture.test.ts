@@ -236,6 +236,15 @@ test('reconnects after the socket drops and does not save', async () => {
   })
 })
 
+test('reads whether OBS is streaming or recording', async () => {
+  await withObs({ streaming: true }, async (fixture) => {
+    await connect(fixture)
+    const activity = await fixture.app.outputActivity()
+    assert.deepEqual(activity, { streaming: true, recording: false })
+    assertAllowlist(fixture.server)
+  })
+})
+
 test('a rejected password does not start reconnect', async () => {
   await withObs({}, async (fixture) => {
     const result = await connect(fixture, 'wrong-password-value')

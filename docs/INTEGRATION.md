@@ -93,20 +93,26 @@ A checked replay can become this grant. An unchecked replay cannot.
 
 The pipeline's `ClipCandidate` (`ownerId`, `state`, `window`, `assetRef`, `source`) is a different record from the desktop `ClipCandidate`. `score`, `title`, and `caption` stay null for Tippy Brain. A future job must still refuse a window over 120 seconds, a Twitch or remote URL, and a file the creator did not check. This screen does not probe, render, or upload.
 
-## VOD intelligence stub
+## Processing mode
 
-Flag `desktopVodIntelligence` (`desktop_vod_intelligence`) defaults to false. The Capture screen lists Import recording, Scan, Detect candidates, Review highlights, AI edit, Approve, Content Planner, and Publish. Scan does not read a file.
+`services/tippy-media` has no scheduling module yet. Desktop uses `resolveProcessingMode` until that module lands. Settings offers Live, Balanced, and Performance. Live keeps detection and capture and does not edit. Balanced can send one selected sample. Performance can ask the scanner for local ASR and can edit. If `GetStreamStatus` or `GetRecordStatus` says OBS is streaming or recording, the effective mode becomes Live. No mode opens the network.
 
-`services/tippy-vod-scanner` is not on the media pipeline branch. When that CLI exists, the desktop handoff is:
+## Three capture paths
 
-```ts
-{
-  sourcePath: string
-  maxWindowSec: 120
-  modifySource: false
-  runsNow: false
-  network: "none"
-}
-```
+`lib/tippy/contracts` is not on `cursor/tippy-vod-scanner-fcb2` or `cursor/tippy-media-pipeline`. Desktop records the same three paths locally:
 
-A candidate the scanner may return later is `{ sourcePath, startSec, endSec, durationSec, reason, classification, confirmedHighlight: false }`. Spikes stay candidates. The scanner must not modify the source, must not upload, and must keep each pipeline job at or under 120 seconds. Samples of 30–90 seconds are the scanner's job. This app does not extract them.
+| Path | Id | Desktop |
+| --- | --- | --- |
+| A Twitch | `tippy.capture.twitch.v1` | Link and embed only. This app does not download it. |
+| B OBS replay | `tippy.capture.obs-replay.v1` | A checked inventory row. The creator also picks a benchmark category. The manifest is `tippy.sample-manifest.v1`. |
+| C VOD | `tippy.capture.vod.v1` | `createVodDesktopApi()` on PR #84, consent `creator_authorized_local_folder`. |
+
+## VOD intelligence
+
+Flag `desktopVodIntelligence` (`desktop_vod_intelligence`) defaults to false. While it is off, Capture does not spawn a process.
+
+When it is on, Capture starts a local Node process. The program is `node` or an absolute `node` binary. The script must be an absolute `services/tippy-vod-scanner/src/cli.ts`. Rust `sidecar_start` repeats that check and does not use a shell. Cancel calls `sidecar_cancel`.
+
+The flow is authorize folder, scan the checked recording, review candidate ids, then `edit` for a selected sample. `edit` is the scanner command that calls `runEdits` in `services/tippy-media`. The pipeline has no separate job CLI. Publish stays refused. Nothing is uploaded.
+
+The scanner CLI lives on `cursor/tippy-vod-scanner-fcb2` (draft PR #84), not inside this repo. It writes `tippy.sample-manifest.v1`. Spikes stay candidates. The scanner must not modify the source. Each pipeline job stays at or under 120 seconds. This desktop build does not extract samples itself and does not upload them.
