@@ -8,6 +8,7 @@ mod flags;
 mod jobs;
 mod log;
 mod media;
+mod obs_local;
 mod preview;
 mod project;
 mod runtime;
@@ -263,6 +264,11 @@ fn drain_gate(project_id: &str) -> Arc<Mutex<()>> {
         .clone()
 }
 
+#[tauri::command]
+fn stat_local_replay(path: String) -> Result<obs_local::ReplayStat, String> {
+    obs_local::replay_stat(std::path::Path::new(&path))
+}
+
 fn data_dir(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
     if let Ok(path) = std::env::var("TIPPY_DATA_DIR") {
         if !path.trim().is_empty() {
@@ -298,6 +304,26 @@ pub fn run() {
             }
             let status = state.engine_status();
             log::log_line(&state.log_path, "info", &status.message);
+            if state.flags.desktop_chat_replay {
+                match obs_local::serve(app.handle().clone()) {
+                    Ok(origin) => log::log_line(
+                        &state.log_path,
+                        "info",
+                        &format!("OBS chat channel {origin}"),
+                    ),
+                    Err(err) => log::log_line(
+                        &state.log_path,
+                        "error",
+                        &format!("OBS chat channel failed: {err}"),
+                    ),
+                }
+            } else {
+                log::log_line(
+                    &state.log_path,
+                    "info",
+                    "OBS chat channel is off until desktopChatReplay is true",
+                );
+            }
             let ids = service::recover_all(&state);
             app.manage(state);
             for id in ids {
@@ -322,7 +348,8 @@ pub fn run() {
             undo_short_change,
             accept_short_changes,
             export_short,
-            edit_timeline
+            edit_timeline,
+            stat_local_replay
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tippy Desktop");

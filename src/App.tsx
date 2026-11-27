@@ -24,6 +24,7 @@ import { JobBar } from "./components/JobBar";
 import {
   IconAnalytics,
   IconBrand,
+  IconCapture,
   IconHome,
   IconLibrary,
   IconPlanner,
@@ -34,6 +35,7 @@ import {
 } from "./components/Icons";
 import { TIPPY_NOT_CONNECTED } from "./components/TippyRail";
 import type { AppMeta, JobListItem, Project, ProjectCard, TimelineEdit } from "./types";
+import { CaptureView } from "./views/CaptureView";
 import { EmptyDestinationView } from "./views/EmptyDestinationView";
 import { HomeView } from "./views/HomeView";
 import { ProjectView } from "./views/ProjectView";
@@ -45,11 +47,13 @@ type Route =
   | { name: "home" }
   | { name: "projects" }
   | { name: "project"; projectId: string }
+  | { name: "capture" }
   | { name: "placeholder"; id: PlaceholderId };
 
 const NAV = [
   { id: "home", label: "Home", icon: IconHome, kind: "route" },
   { id: "projects", label: "Projects", icon: IconProjects, kind: "route" },
+  { id: "capture", label: "Capture", icon: IconCapture, kind: "route" },
   { id: "create", label: "Create", icon: IconPlus, kind: "route" },
   { id: "review", label: "Review", icon: IconReview, kind: "placeholder" },
   { id: "planner", label: "Planner", icon: IconPlanner, kind: "placeholder" },
@@ -290,6 +294,7 @@ export function App() {
               (item.id === "home" && route.name === "home" && !isCreate) ||
               (item.id === "projects" &&
                 (route.name === "projects" || route.name === "project")) ||
+              (item.id === "capture" && route.name === "capture") ||
               (route.name === "placeholder" && route.id === item.id);
             return (
               <button
@@ -315,6 +320,9 @@ export function App() {
                   }
                   if (item.id === "projects") {
                     setRoute({ name: "projects" });
+                  }
+                  if (item.id === "capture") {
+                    setRoute({ name: "capture" });
                   }
                   if (item.kind === "placeholder") {
                     setRoute({ name: "placeholder", id: item.id });
@@ -349,6 +357,12 @@ export function App() {
                 }
                 return TIPPY_NOT_CONNECTED;
               }}
+            />
+          ) : null}
+          {route.name === "capture" ? (
+            <CaptureView
+              deviceId={meta?.account.ownerId ?? "this-pc"}
+              chatEnabled={meta?.flags.desktopChatReplay ?? false}
             />
           ) : null}
           {route.name === "projects" ? (

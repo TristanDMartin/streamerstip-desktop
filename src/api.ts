@@ -97,3 +97,21 @@ export function onTippyEvent(
     handler(event.payload);
   });
 }
+
+export interface ObsChatSignal {
+  idempotencyKey?: string;
+  phrase?: string;
+}
+
+export function onObsChatCapture(
+  handler: (signal: ObsChatSignal) => void,
+): Promise<UnlistenFn> {
+  return listen<string>("obs-chat-capture", (event) => {
+    try {
+      const parsed = JSON.parse(event.payload) as ObsChatSignal;
+      handler(parsed);
+    } catch {
+      handler({});
+    }
+  });
+}

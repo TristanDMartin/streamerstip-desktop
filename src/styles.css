@@ -1655,3 +1655,26 @@ textarea:focus,
     transition: none;
   }
 }
+
+.capture-board {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 760px;
+}
+
+.capture-board label {
+  display: block;
+  margin: 10px 0;
+}
+
+.capture-board input:not([type="checkbox"]) {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  box-sizing: border-box;
+}
+
+.capture-board button {
+  margin: 8px 8px 0 0;
+}
