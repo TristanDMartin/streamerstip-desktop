@@ -2,5 +2,5 @@
   "identifier": "default",
   "description": "Local Tippy Desktop shell",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:default"]
+  "permissions": ["core:default", "dialog:default", "global-shortcut:allow-register", "global-shortcut:allow-unregister"]
 }

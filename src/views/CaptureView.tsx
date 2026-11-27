@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 
 import { onObsChatCapture } from "../api";
 import { TippyApp, type AppStatus } from "../obs/app";
-import { parseChord, createHotkeyController } from "../obs/hotkey";
+import { bindGlobalHotkey } from "../obs/globalHotkey";
 import {
   clipsAuthorizedForUpload,
   rememberClip,
   setUploadAuthorization,
   type StoredClip,
 } from "../obs/inventory";
+import { planObsReplayGrant, planVodScan, VOD_STEPS } from "../obs/mediaHandoff";
 import { obsReadiness } from "../obs/readiness";
 
 const INVENTORY_KEY = "tippy.obsInventory";
@@ -16,9 +17,10 @@ const INVENTORY_KEY = "tippy.obsInventory";
 interface CaptureViewProps {
   deviceId: string;
   chatEnabled: boolean;
+  vodEnabled: boolean;
 }
 
-export function CaptureView({ deviceId, chatEnabled }: CaptureViewProps) {
+export function CaptureView({ deviceId, chatEnabled, vodEnabled }: CaptureViewProps) {
   const app = useMemo(
     () => new TippyApp({ deviceId, hostname: "this-pc" }),
     [deviceId],
@@ -28,6 +30,8 @@ export function CaptureView({ deviceId, chatEnabled }: CaptureViewProps) {
   const [host, setHost] = useState("127.0.0.1");
   const [port, setPort] = useState(4455);
   const [consent, setConsent] = useState(false);
+  const [hotkeyNote, setHotkeyNote] = useState("Registering the global shortcut.");
+  const [vodNote, setVodNote] = useState("VOD scan has not run.");
   const [inputName, setInputName] = useState("");
   const [inventory, setInventory] = useState<StoredClip[]>(() => loadInventory());
   const report = obsReadiness(status);
@@ -46,35 +50,27 @@ export function CaptureView({ deviceId, chatEnabled }: CaptureViewProps) {
   }, [app]);
 
   useEffect(() => {
-    const chord = parseChord(status.hotkey);
-    const controller = createHotkeyController(chord, () => {
+    let unbind: (() => Promise<void>) | undefined;
+    let active = true;
+    void bindGlobalHotkey(status.hotkey, () => {
       void app.saveMoment("hotkey").then(() => setStatus(app.status()));
-    });
-    const down = (event: KeyboardEvent) => {
-      controller.handle({
-        type: "down",
-        ctrl: event.ctrlKey,
-        shift: event.shiftKey,
-        alt: event.altKey,
-        meta: event.metaKey,
-        key: event.key,
+    })
+      .then((binding) => {
+        if (!active) {
+          void binding.unbind();
+          return;
+        }
+        unbind = binding.unbind;
+        setHotkeyNote(`Global shortcut ${binding.accelerator} is registered with the operating system.`);
+      })
+      .catch(() => {
+        if (active) {
+          setHotkeyNote("Global shortcut is not registered in this session. Capture still works from Save moment.");
+        }
       });
-    };
-    const up = (event: KeyboardEvent) => {
-      controller.handle({
-        type: "up",
-        ctrl: event.ctrlKey,
-        shift: event.shiftKey,
-        alt: event.altKey,
-        meta: event.metaKey,
-        key: event.key,
-      });
-    };
-    window.addEventListener("keydown", down);
-    window.addEventListener("keyup", up);
     return () => {
-      window.removeEventListener("keydown", down);
-      window.removeEventListener("keyup", up);
+      active = false;
+      void unbind?.();
     };
   }, [app, status.hotkey]);
 
@@ -182,7 +178,7 @@ export function CaptureView({ deviceId, chatEnabled }: CaptureViewProps) {
       </section>
       <section className="panel">
         <h2>Save moment</h2>
-        <p>Hotkey while this window is focused: {status.hotkey}</p>
+        <p>{hotkeyNote}</p>
         <button type="button" onClick={() => void save("manual")}>
           Save moment
         </button>
@@ -275,6 +271,44 @@ export function CaptureView({ deviceId, chatEnabled }: CaptureViewProps) {
           {clipsAuthorizedForUpload(inventory).length} selected for a later upload.
           This build does not send them.
         </p>
+        <ul>
+          {inventory
+            .map((item) => planObsReplayGrant(item, deviceId))
+            .filter((grant) => grant !== null)
+            .map((grant) => (
+              <li key={grant.replayPath}>
+                {grant.consent} · {grant.replayPath}
+              </li>
+            ))}
+        </ul>
+      </section>
+      <section className="panel" data-testid="vod-stub">
+        <h2>VOD intelligence</h2>
+        <p>
+          {vodEnabled
+            ? "The local scanner is flagged on. This screen does not scan or upload."
+            : "desktopVodIntelligence is off. The steps below stay in this app and do not run."}
+        </p>
+        <ol>
+          {VOD_STEPS.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => {
+            const plan = planVodScan("", vodEnabled);
+            setVodNote(
+              "ok" in plan
+                ? "Scan stays off. No file is read and nothing is uploaded."
+                : "A local scan is prepared. It does not run and nothing is uploaded.",
+            );
+          }}
+        >
+          Scan
+        </button>
+        <p>{vodNote}</p>
       </section>
     </section>
   );

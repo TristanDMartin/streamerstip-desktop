@@ -21,7 +21,7 @@ Every branch and pull request in this repo was listed. There is no Cursor `envir
 | 9 | `cursor/comfort-glass-redesign-988a` | Current shell. Comfort glass Home. |
 | 10 | this branch | Was a Node companion on `main`. Now Capture inside the shell from pull request 9. |
 
-No branch contains StreamReady, a stream-ready module, or a pre-stream checklist. The closest word is a job state named `ready`. Capture adds its own pre-stream check (`obsReadiness`) for OBS authentication, replay buffer, disk, and a loopback host. It does not invent a StreamReady product or call a module that is not in the tree.
+A second search of every remote branch on 27 Nov 2026 still found no StreamReady symbol, stream-ready module, or pre-stream checklist. The only matches are this document and `obsReadiness`. The closest existing word in the foundation is a job state named `ready`. Capture keeps `obsReadiness` for OBS authentication, replay buffer, disk, and a loopback host. It does not invent a StreamReady product, and it does not add a second desktop app.
 
 ## Shell, auth, and OBS
 
@@ -42,7 +42,7 @@ Apple Developer Program is $99 USD per year. Windows OV certificates are typical
 - The same Tauri shell is the Windows and macOS app. Pull request 7 is the unsigned build workflow. Run `npm run tauri dev` on the streaming PC for this spike. Rust 1.90 or newer is what the locked Tauri crates ask for.
 - OBS WebSocket v5 is loopback on both systems. The host field rejects a LAN address. On two PCs, run Tippy Desktop on the PC where OBS is recording.
 - Replay paths differ. `stat_local_replay` accepts an absolute path with a video extension and returns size and modified time. The webview does not read the file itself.
-- Ctrl+Shift+F9 works while the Tippy window is focused. A global hotkey while a game is focused needs the Tauri global-shortcut plugin and, on macOS, Accessibility permission. That plugin is not added here. The button always works.
+- Ctrl+Shift+F9 is registered as `CommandOrControl+Shift+F9` through `tauri-plugin-global-shortcut`. Capture no longer listens for that chord on the window. On macOS the app needs Accessibility permission before the operating system will deliver it. The button always works. This agent did not register the shortcut with a real OS.
 - This build is unsigned.
 
 ## Cost and rights

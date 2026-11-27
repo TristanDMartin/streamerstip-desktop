@@ -5,7 +5,9 @@ mod atomic;
 mod editor;
 mod error;
 mod flags;
+mod http_framing;
 mod jobs;
+mod keychain;
 mod log;
 mod media;
 mod obs_local;
@@ -269,6 +271,21 @@ fn stat_local_replay(path: String) -> Result<obs_local::ReplayStat, String> {
     obs_local::replay_stat(std::path::Path::new(&path))
 }
 
+#[tauri::command]
+fn keychain_save(service: String, account: String, secret: String) -> Result<(), String> {
+    keychain::save(&service, &account, &secret)
+}
+
+#[tauri::command]
+fn keychain_load(service: String, account: String) -> Result<String, String> {
+    keychain::load(&service, &account)
+}
+
+#[tauri::command]
+fn keychain_clear(service: String, account: String) -> Result<(), String> {
+    keychain::clear(&service, &account)
+}
+
 fn data_dir(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
     if let Ok(path) = std::env::var("TIPPY_DATA_DIR") {
         if !path.trim().is_empty() {
@@ -282,6 +299,7 @@ fn data_dir(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             let dir = data_dir(app)?;
             let mut state = AppState::open(
@@ -349,7 +367,10 @@ pub fn run() {
             accept_short_changes,
             export_short,
             edit_timeline,
-            stat_local_replay
+            stat_local_replay,
+            keychain_save,
+            keychain_load,
+            keychain_clear
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tippy Desktop");

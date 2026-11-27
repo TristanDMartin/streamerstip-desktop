@@ -62,7 +62,7 @@ Local transcription uses `whisper-cli` from whisper.cpp. Tippy looks for that bi
 
 Open Capture in the sidebar. Tippy connects only to OBS on this computer (`127.0.0.1`, port 4455) with the WebSocket password. The replay file stays on this PC. Twitch clips are not downloaded, and nothing is uploaded.
 
-In OBS, enable the WebSocket server with a password and start the replay buffer. The pre-stream check on Capture turns ready when the socket is authenticated, the buffer is on, and the recording drive is not under 2048 MB. Save moment, or press Ctrl+Shift+F9 while the Tippy window is focused. Calibrate the audio spike before turning it on. A checked clip is marked for a later upload. This build does not send it.
+In OBS, enable the WebSocket server with a password and start the replay buffer. The pre-stream check on Capture turns ready when the socket is authenticated, the buffer is on, and the recording drive is not under 2048 MB. Save moment works with zero viewers and does not wait for chat. The shortcut is the operating-system chord CommandOrControl+Shift+F9. If the socket drops, Tippy reconnects with a delay of 1, 2, 4, 8, then 16 seconds, capped at 30. A wrong password does not retry. Calibrate the audio spike before turning it on. A checked clip is the only file that becomes a `creator_authorized_local_replay` grant. This build does not send it.
 
 Chat replay is off until `desktopChatReplay` is true in `flags.json` in the app data directory. The listener is then `POST http://127.0.0.1:4736/capture` with header `x-tippy-local: 1`. It does not read Twitch chat.
 

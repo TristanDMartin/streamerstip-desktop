@@ -18,7 +18,9 @@ import { CaptureError, type FailureCode } from './errors'
 import {
   ADOPTED_MESSAGE,
   AUDIO_OFF_COPY,
+  DISCONNECTED_IDLE_MESSAGE,
   DUPLICATE_MESSAGE,
+  RECONNECTING_MESSAGE,
   REPLAY_OFF_MESSAGE,
   STALE_PATH_MESSAGE,
   consentRequiredMessage,
@@ -26,6 +28,7 @@ import {
   lowDiskMessage,
   missingFileMessage,
 } from './messages'
+import { nextReconnectDelayMs, shouldKeepReconnecting } from './reconnect'
 import { ObsSession } from './obsSession'
 
 export type SaveResult =
@@ -116,6 +119,11 @@ export class TippyApp {
   private hotkey: string
   private readonly statFile: StatFile
   private readonly chatKeys = new Set<string>()
+  private keepAlive = false
+  private reconnectAttempt = 0
+  private reconnecting = false
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private credentials: { host: string; port: number; password: string } | null = null
 
   constructor(options: AppOptions = {}) {
     this.deviceId = options.deviceId ?? 'this-pc'
@@ -127,9 +135,13 @@ export class TippyApp {
     this.replayLengthSeconds = clampReplayLength(options.replayLengthSeconds ?? DEFAULT_REPLAY_SECONDS)
     this.hotkey = options.hotkey ?? 'Ctrl+Shift+F9'
     this.session.onDropped = () => {
-      if (this.saveInFlight) return
-      this.lastCode = 'disconnected'
-      this.lastMessage = 'OBS disconnected. Check that OBS is open and the WebSocket server is still enabled.'
+      this.replayActive = null
+      this.diskFreeMb = null
+      if (!this.saveInFlight) {
+        this.lastCode = 'disconnected'
+        this.lastMessage = this.keepAlive ? RECONNECTING_MESSAGE : DISCONNECTED_IDLE_MESSAGE
+      }
+      this.scheduleReconnect()
     }
     this.session.onMeters((data) => this.handleMeter(data))
     this.session.setExternalSaveHandler((filePath) => {
@@ -139,10 +151,14 @@ export class TippyApp {
   }
 
   async connect(input: { host: string; port: number; password: string }): Promise<{ ok: boolean; message: string }> {
+    this.clearReconnect()
+    this.credentials = { host: input.host, port: input.port, password: input.password }
     try {
       const version = await this.session.connect(input)
       this.host = input.host
       this.sessionId = nextId()
+      this.keepAlive = true
+      this.reconnectAttempt = 0
       this.lastCode = null
       this.lastMessage = `Connected to OBS ${version.obsVersion} (websocket ${version.obsWebSocketVersion}).`
       await this.refresh()
@@ -153,15 +169,57 @@ export class TippyApp {
       this.lastCode = error instanceof CaptureError ? error.code : 'not_connected'
       this.lastMessage = message
       this.host = null
+      if (!this.keepAlive) this.credentials = null
       return { ok: false, message }
     }
   }
 
   async disconnect(): Promise<void> {
+    this.keepAlive = false
+    this.credentials = null
+    this.clearReconnect()
     await this.session.disconnect()
     this.host = null
     this.replayActive = null
     this.diskFreeMb = null
+  }
+
+  private scheduleReconnect(): void {
+    if (!this.keepAlive || !this.credentials || this.reconnectTimer || this.reconnecting) return
+    const delay = nextReconnectDelayMs(this.reconnectAttempt)
+    this.reconnectAttempt += 1
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      void this.reconnectNow()
+    }, delay)
+  }
+
+  private async reconnectNow(): Promise<void> {
+    if (!this.keepAlive || !this.credentials) return
+    this.reconnecting = true
+    let retry = false
+    try {
+      const result = await this.connect(this.credentials)
+      if (result.ok) {
+        this.lastMessage = `Reconnected. ${result.message}`
+        return
+      }
+      if (!shouldKeepReconnecting(this.lastCode ?? '')) {
+        this.keepAlive = false
+        this.credentials = null
+        this.clearReconnect()
+        return
+      }
+      retry = true
+    } finally {
+      this.reconnecting = false
+    }
+    if (retry && this.keepAlive) this.scheduleReconnect()
+  }
+
+  private clearReconnect(): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = null
   }
 
   ingestChat(signal: ChatSignal, flagEnabled: boolean): { accepted: boolean; reason: string } {

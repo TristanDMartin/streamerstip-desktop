@@ -221,3 +221,27 @@ test('two PCs do not share an idempotency key', async () => {
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('reconnects after the socket drops and does not save', async () => {
+  await withObs({}, async (fixture) => {
+    const connected = await connect(fixture)
+    assert.equal(connected.ok, true)
+    const saves = saveCount(fixture.server)
+    fixture.server.dropClients()
+    await new Promise((resolve) => setTimeout(resolve, 1600))
+    assert.equal(fixture.app.status().connected, true)
+    assert.match(fixture.app.status().lastMessage ?? '', /Reconnected/)
+    assert.equal(saveCount(fixture.server), saves)
+    assert.equal(JSON.stringify(fixture.app.status()).includes(PASSWORD), false)
+  })
+})
+
+test('a rejected password does not start reconnect', async () => {
+  await withObs({}, async (fixture) => {
+    const result = await connect(fixture, 'wrong-password-value')
+    assert.equal(result.ok, false)
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+    assert.equal(fixture.server.connectionCount, 1)
+    assert.equal(fixture.app.status().connected, false)
+  })
+})

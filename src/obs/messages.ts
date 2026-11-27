@@ -21,6 +21,9 @@ export const DISCONNECTED_SAVE_MESSAGE =
 export const DISCONNECTED_IDLE_MESSAGE =
   'OBS disconnected. Check that OBS is open and the WebSocket server is still enabled.'
 
+export const RECONNECTING_MESSAGE =
+  'OBS disconnected. Tippy is reconnecting on this PC.'
+
 export const DUPLICATE_MESSAGE =
   'This moment is already saved. Tippy did not ask OBS to save again.'
 

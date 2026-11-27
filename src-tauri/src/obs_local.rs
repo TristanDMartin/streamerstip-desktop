@@ -34,7 +34,7 @@ pub fn replay_stat(path: &Path) -> Result<ReplayStat, String> {
         .to_ascii_lowercase();
     if !matches!(
         extension.as_str(),
-        "mkv" | "mp4" | "mov" | "flv" | "ts" | "m4v"
+        "mkv" | "mp4" | "mov" | "flv" | "ts" | "m4v" | "webm"
     ) {
         return Err("Tippy only stats a local video replay.".into());
     }
@@ -108,36 +108,46 @@ pub fn serve(app: AppHandle) -> std::io::Result<String> {
 
 fn serve_one(mut stream: std::net::TcpStream, app: &AppHandle) -> std::io::Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(2)))?;
-    let mut buffer = [0_u8; 8192];
-    let mut filled = 0;
-    while filled < buffer.len() {
-        match stream.read(&mut buffer[filled..]) {
-            Ok(0) => break,
+    let mut buffer = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    let raw = loop {
+        if buffer.len() > 16_384 {
+            return write_chat_response(&mut stream, 400);
+        }
+        match stream.read(&mut chunk) {
+            Ok(0) => break String::from_utf8_lossy(&buffer).to_string(),
             Ok(count) => {
-                filled += count;
-                if buffer[..filled].windows(4).any(|item| item == b"\r\n\r\n") {
-                    break;
+                buffer.extend_from_slice(&chunk[..count]);
+                match crate::http_framing::assemble_http_request(&buffer) {
+                    Ok(Some(raw)) => break String::from_utf8_lossy(&raw).to_string(),
+                    Ok(None) => continue,
+                    Err(_) => return write_chat_response(&mut stream, 400),
                 }
             }
-            Err(_) => break,
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock || err.kind() == std::io::ErrorKind::TimedOut => {
+                break String::from_utf8_lossy(&buffer).to_string();
+            }
+            Err(err) => return Err(err),
         }
-    }
-    let raw = String::from_utf8_lossy(&buffer[..filled]).to_string();
+    };
     let outcome = handle_chat_bytes(true, &raw);
     if let Some(body) = outcome.emit {
         let _ = app.emit("obs-chat-capture", body);
     }
-    let reason = match outcome.status {
+    write_chat_response(&mut stream, outcome.status)
+}
+
+fn write_chat_response(stream: &mut std::net::TcpStream, status: u16) -> std::io::Result<()> {
+    let reason = match status {
         202 => "Accepted",
         400 => "Bad Request",
         403 => "Forbidden",
         404 => "Not Found",
         _ => "Method Not Allowed",
     };
-    let payload = format!("{{\"status\":{}}}", outcome.status);
+    let payload = format!("{{\"status\":{status}}}");
     let head = format!(
-        "HTTP/1.1 {} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
-        outcome.status,
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
         payload.len()
     );
     stream.write_all(head.as_bytes())

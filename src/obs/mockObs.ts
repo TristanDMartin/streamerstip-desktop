@@ -80,6 +80,10 @@ export class MockObs {
     return address.port
   }
 
+  dropClients(): void {
+    for (const socket of this.sockets) socket.terminate()
+  }
+
   async stop(): Promise<void> {
     for (const socket of this.sockets) socket.terminate()
     await new Promise<void>((resolve) => this.wss.close(() => resolve()))

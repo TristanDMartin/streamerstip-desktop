@@ -363,6 +363,7 @@ export function App() {
             <CaptureView
               deviceId={meta?.account.ownerId ?? "this-pc"}
               chatEnabled={meta?.flags.desktopChatReplay ?? false}
+              vodEnabled={meta?.flags.desktopVodIntelligence ?? false}
             />
           ) : null}
           {route.name === "projects" ? (
