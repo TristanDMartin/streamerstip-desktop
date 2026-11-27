@@ -8,9 +8,12 @@ import {
   canEnterEditingPipeline,
   clipInboxVisible,
   clipReviewActionAllowed,
+  createLocalEditGrant,
   emitObsReplayClip,
   emitTwitchLiveClip,
   emitVodClip,
+  requireLocalEditGrant,
+  revokeLocalEditGrant,
   validateClipContract,
 } from './captureContracts'
 
@@ -39,7 +42,26 @@ test('paths B and C stay out of the inbox until the creator flag is on', () => {
   if (checked.ok) {
     assert.equal(checked.contract.sourcePath, 'obs_replay')
     assert.equal(checked.contract.mediaRights, 'creator_owned')
-    assert.equal(canEnterEditingPipeline(checked.contract), true)
+    assert.equal(canEnterEditingPipeline(checked.contract), false)
+    const known = createLocalEditGrant({
+      id: 'grant-path-b',
+      ownerId: 'owner-1',
+      source: '/local/obs/replay.mp4',
+      timestamp: '2026-11-27T00:00:00.000Z',
+    })
+    assert.equal(known.hash, '8f9d0827de17845bcf7cda0ef3ed65ed2f62b688870d8f2748178de0dc13cda1')
+    const grant = createLocalEditGrant({
+      id: 'grant-1',
+      ownerId: 'owner_test',
+      source: '/videos/replay.mkv',
+      timestamp: '2026-11-27T00:00:00.000Z',
+    })
+    const input = { ownerId: 'owner_test', source: '/videos/replay.mkv', grants: [grant] }
+    assert.equal(canEnterEditingPipeline(checked.contract, input), true)
+    assert.doesNotThrow(() => assertEditingAllowed(checked.contract, input))
+    const revoked = revokeLocalEditGrant(grant, '2026-11-27T01:00:00.000Z')
+    assert.equal(requireLocalEditGrant({ ...input, grants: [revoked] }).ok, false)
+    assert.throws(() => assertEditingAllowed(checked.contract, { ...input, grants: [revoked] }), /revoked/)
   }
   const blocked = emitObsReplayClip({ inventoryId: 'obs_replay:pc:file:12:1', authorized: false })
   assert.equal(canEnterEditingPipeline(blocked), false)

@@ -15,12 +15,12 @@ cargo +1.91.0 test --locked --manifest-path src-tauri/Cargo.toml --lib
 `npm test` (Vitest 3.2.7) exited 0:
 
 ```
-Test Files  14 passed (14)
-     Tests  55 passed (55)
-  Duration  3.36s
+Test Files  15 passed (15)
+     Tests  56 passed (56)
+  Duration  3.27s
 ```
 
-That includes the existing shell tests (Home, Tippy rail, team, format) and the OBS tests: auth failure, replay off, save, duplicate save, disconnect mid-save, adopt after disconnect, two device ids, audio threshold, chat flag, pre-stream check, reconnect after a dropped socket, no retry after a bad password, the global-shortcut binder, the keychain vault contract, the Path B grant, the VOD stub, the Capture screen render, `tippy.scheduler.v1`, `GetStats` skipped frames, `tippy.clip-contract.v1`, and resource-monitor suspend/resume.
+That includes the existing shell tests (Home, Tippy rail, team, format) and the OBS tests: auth failure, replay off, save, duplicate save, disconnect mid-save, adopt after disconnect, two device ids, audio threshold, chat flag, pre-stream check, reconnect after a dropped socket, no retry after a bad password, the global-shortcut binder, the keychain vault contract, the Path B grant, the VOD stub, the Capture screen render, `tippy.scheduler.v1`, `GetStats` skipped frames, `tippy.clip-contract.v1`, resource-monitor suspend/resume, and the vendored `tippy.contract-fixtures.v1` suite (26 cases, checksum ok). The same runner is `node --experimental-strip-types contracts/runner/run-fixtures.ts`: 26 pass, 0 fail. A path B or C send without an unrevoked `local_edit` grant fails. The known path B grant hash is `8f9d0827de17845bcf7cda0ef3ed65ed2f62b688870d8f2748178de0dc13cda1`.
 
 ```
 rustc --edition 2021 --test src-tauri/src/http_framing.rs

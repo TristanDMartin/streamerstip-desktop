@@ -1,0 +1,44 @@
+{
+  "fixtureSchema": "tippy.contract-fixture.v1",
+  "id": "invalid-grant-scope",
+  "expect": "refuse",
+  "code": "grant_mismatch",
+  "ownerId": "owner-1",
+  "source": "/local/obs/replay.mp4",
+  "clip": {
+    "schema": "tippy.clip-contract.v1",
+    "sourcePath": "obs_replay",
+    "mediaRights": "creator_owned",
+    "storage": "creator_inventory",
+    "processing": "authorized_only",
+    "editingPipeline": true,
+    "download": false,
+    "authorized": true,
+    "publishing": "unapproved",
+    "inventoryId": "inv-1",
+    "title": "Replay",
+    "hook": "Local replay",
+    "caption": "Unpublished",
+    "status": "idea",
+    "approvalRequired": true,
+    "inboxMarkerId": null
+  },
+  "grants": [
+    {
+      "schema": "tippy.consent-grant.v1",
+      "id": "grant-cloud-only",
+      "ownerId": "owner-1",
+      "source": "/local/obs/replay.mp4",
+      "timestamp": "2026-11-27T00:00:00.000Z",
+      "scope": "cloud_sync",
+      "revokedAt": null,
+      "hash": "139868e1746e876dcf0690903e262d947062db320d12694a99281e25a0584848"
+    }
+  ],
+  "events": [
+    {
+      "id": "evt-scope"
+    }
+  ],
+  "manifest": null
+}

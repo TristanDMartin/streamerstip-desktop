@@ -32,7 +32,11 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev pkg-config build-essential libssl-dev patchelf
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev pkg-config build-essential libssl-dev patchelf ffmpeg
+
+      - name: Install FFmpeg
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -53,6 +57,9 @@ jobs:
 
       - name: Test TypeScript
         run: npm test
+
+      - name: Contract fixture checksum
+        run: node --experimental-strip-types contracts/runner/run-fixtures.ts
 
       - name: Test Rust
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib

@@ -1,0 +1,44 @@
+{
+  "fixtureSchema": "tippy.contract-fixture.v1",
+  "id": "invalid-twitch-url",
+  "expect": "refuse",
+  "code": "twitch_link_only",
+  "ownerId": "owner-1",
+  "source": "https://clips.twitch.tv/Abc",
+  "clip": {
+    "schema": "tippy.clip-contract.v1",
+    "sourcePath": "obs_replay",
+    "mediaRights": "creator_owned",
+    "storage": "creator_inventory",
+    "processing": "authorized_only",
+    "editingPipeline": true,
+    "download": false,
+    "authorized": true,
+    "publishing": "unapproved",
+    "inventoryId": "inv-1",
+    "title": "Replay",
+    "hook": "Local replay",
+    "caption": "Unpublished",
+    "status": "idea",
+    "approvalRequired": true,
+    "inboxMarkerId": null
+  },
+  "grants": [
+    {
+      "schema": "tippy.consent-grant.v1",
+      "id": "grant-twitch",
+      "ownerId": "owner-1",
+      "source": "https://clips.twitch.tv/Abc",
+      "timestamp": "2026-11-27T00:00:00.000Z",
+      "scope": "local_edit",
+      "revokedAt": null,
+      "hash": "9471684fbb692b5fdd9375e9516f962867b57862dafc9f3afb688f3a1d5c6844"
+    }
+  ],
+  "events": [
+    {
+      "id": "evt-twitch"
+    }
+  ],
+  "manifest": null
+}

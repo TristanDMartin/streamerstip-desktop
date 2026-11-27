@@ -109,6 +109,8 @@ Desktop mirrors `services/tippy-media/src/scheduler.ts` (`tippy.scheduler.v1`) i
 
 Paths B and C stay out of the inbox while `tippy_creator_inbox_enabled` is off. That flag defaults off.
 
+`contracts/` is a copy of the fixture suite from `streamerstipReact` commit `1e95995c`. It is `tippy.contract-fixtures.v1` version 1. `suiteSha256` is `18e5ed85c4fc12fe64cf2bd3759d66acd8e386c2e9d6c8d62cad37b397f05e6b`. The JSON is not edited here. A path B or C item reaches editing only with an unrevoked `tippy.consent-grant.v1` whose scope is `local_edit` and whose hash matches the source, timestamp, and scope. Save moment writes that grant only when the creator checks local editing. A claimed `mediaRights` or sample id is not enough. A revoked grant blocks the send.
+
 ## VOD intelligence
 
 Flag `desktopVodIntelligence` (`desktop_vod_intelligence`) defaults to false. While it is off, Capture does not spawn a process.

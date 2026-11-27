@@ -51,6 +51,8 @@ export class VodDesk {
     activity: ObsObservation
     gpu?: GpuObservation
     resources?: { suspendProcessing: boolean }
+    source?: string
+    grants?: readonly unknown[]
     onLine?: (line: string) => void
   }): Promise<PlanResult & { result?: SidecarResult }> {
     return this.execute(planEdit({ ...input, enabled: this.enabled, paths: this.paths }), input.onLine)

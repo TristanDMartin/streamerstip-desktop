@@ -1,0 +1,35 @@
+{
+  "fixtureSchema": "tippy.contract-fixture.v1",
+  "id": "invalid-manifest-id-without-grant",
+  "expect": "refuse",
+  "code": "sample_unknown",
+  "ownerId": "owner-1",
+  "source": "/local/vod/synthetic-quiet.mp4",
+  "clip": {
+    "schema": "tippy.clip-contract.v1",
+    "sourcePath": "vod_intelligence",
+    "mediaRights": "creator_owned",
+    "storage": "creator_inventory",
+    "processing": "authorized_only",
+    "editingPipeline": true,
+    "download": false,
+    "authorized": true,
+    "publishing": "unapproved",
+    "title": "Replay",
+    "hook": "Local replay",
+    "caption": "Unpublished",
+    "status": "idea",
+    "approvalRequired": true,
+    "inboxMarkerId": null,
+    "sampleManifestSchema": "tippy.sample-manifest.v1",
+    "sampleManifestId": "vod-synthetic-quiet",
+    "sampleId": "smp-quiet"
+  },
+  "grants": [],
+  "events": [
+    {
+      "id": "evt-id-only"
+    }
+  ],
+  "manifest": null
+}

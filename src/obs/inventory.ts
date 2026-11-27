@@ -1,4 +1,5 @@
 import type { SaveTrigger } from './contract'
+import type { LocalEditGrant } from './captureContracts'
 
 export interface StoredClip {
   localPath: string
@@ -7,6 +8,7 @@ export interface StoredClip {
   idempotencyKey: string
   triggerTimestamp: number
   uploadAuthorized: boolean
+  editGrant?: LocalEditGrant | null
 }
 
 export function rememberClip(items: readonly StoredClip[], next: StoredClip): readonly StoredClip[] {

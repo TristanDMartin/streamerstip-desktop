@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { onObsChatCapture } from "../api";
 import { TippyApp, type AppStatus } from "../obs/app";
+import { createLocalEditGrant, revokeLocalEditGrant } from "../obs/captureContracts";
 import { bindGlobalHotkey } from "../obs/globalHotkey";
 import {
   clipsAuthorizedForUpload,
@@ -49,6 +50,7 @@ export function CaptureView({ deviceId, chatEnabled, vodEnabled }: CaptureViewPr
   const [host, setHost] = useState("127.0.0.1");
   const [port, setPort] = useState(4455);
   const [consent, setConsent] = useState(false);
+  const [localEditChecked, setLocalEditChecked] = useState(false);
   const [hotkeyNote, setHotkeyNote] = useState("Registering the global shortcut.");
   const [mode, setMode] = useState<ProcessingMode>("live");
   const [activity, setActivity] = useState<ObsObservation>(idleObservation);
@@ -139,6 +141,14 @@ export function CaptureView({ deviceId, chatEnabled, vodEnabled }: CaptureViewPr
           idempotencyKey: result.candidate.idempotencyKey,
           triggerTimestamp: result.candidate.triggerTimestamp,
           uploadAuthorized: false,
+          editGrant: localEditChecked
+            ? createLocalEditGrant({
+              id: result.candidate.idempotencyKey,
+              ownerId: deviceId,
+              source: result.candidate.localPath,
+              timestamp: new Date(result.candidate.triggerTimestamp).toISOString(),
+            })
+            : null,
         });
         if (stored !== current) saveInventory([...stored]);
         return [...stored];
@@ -211,6 +221,14 @@ export function CaptureView({ deviceId, chatEnabled, vodEnabled }: CaptureViewPr
       <section className="panel">
         <h2>Save moment</h2>
         <p>{hotkeyNote}</p>
+        <label>
+          <input
+            type="checkbox"
+            checked={localEditChecked}
+            onChange={(event) => setLocalEditChecked(event.target.checked)}
+          />
+          I authorize local editing of this save
+        </label>
         <button type="button" onClick={() => void save("manual")}>
           Save moment
         </button>
@@ -296,6 +314,34 @@ export function CaptureView({ deviceId, chatEnabled, vodEnabled }: CaptureViewPr
                 />
                 I authorize uploading this replay later
               </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={Boolean(item.editGrant && item.editGrant.revokedAt === null)}
+                  onChange={(event) => {
+                    const next = inventory.map((entry) => {
+                      if (entry.idempotencyKey !== item.idempotencyKey) return entry;
+                      if (!event.target.checked) {
+                        return entry.editGrant
+                          ? { ...entry, editGrant: revokeLocalEditGrant(entry.editGrant, new Date().toISOString()) }
+                          : entry;
+                      }
+                      return {
+                        ...entry,
+                        editGrant: createLocalEditGrant({
+                          id: entry.idempotencyKey,
+                          ownerId: deviceId,
+                          source: entry.localPath,
+                          timestamp: new Date(entry.triggerTimestamp).toISOString(),
+                        }),
+                      };
+                    });
+                    setInventory(next);
+                    saveInventory(next);
+                  }}
+                />
+                I authorize local editing of this replay
+              </label>
             </li>
           ))}
         </ul>
@@ -346,9 +392,10 @@ export function CaptureView({ deviceId, chatEnabled, vodEnabled }: CaptureViewPr
         mode={mode}
         activity={activity}
         suspendProcessing={suspendProcessing}
-        replayPath={inventory.find((item) => item.uploadAuthorized)?.localPath ?? ""}
-        replayAuthorized={inventory.some((item) => item.uploadAuthorized)}
-        replaySavedAt={new Date(inventory.find((item) => item.uploadAuthorized)?.triggerTimestamp ?? 0).toISOString()}
+        replayPath={inventory.find((item) => item.editGrant && item.editGrant.revokedAt === null)?.localPath ?? ""}
+        replayAuthorized={inventory.some((item) => item.editGrant && item.editGrant.revokedAt === null)}
+        replaySavedAt={new Date(inventory.find((item) => item.editGrant && item.editGrant.revokedAt === null)?.triggerTimestamp ?? 0).toISOString()}
+        editGrants={inventory.flatMap((item) => (item.editGrant ? [item.editGrant] : []))}
       />
     </section>
   );

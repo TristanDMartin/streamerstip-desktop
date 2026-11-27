@@ -1,0 +1,63 @@
+{
+  "fixtureSchema": "tippy.contract-fixture.v1",
+  "id": "invalid-id-without-grant",
+  "expect": "refuse",
+  "code": "grant_missing",
+  "ownerId": "owner-1",
+  "source": "/local/vod/synthetic-quiet.mp4",
+  "catalog": [
+    "vod-synthetic-quiet"
+  ],
+  "clip": {
+    "schema": "tippy.clip-contract.v1",
+    "sourcePath": "vod_intelligence",
+    "mediaRights": "creator_owned",
+    "storage": "creator_inventory",
+    "processing": "authorized_only",
+    "editingPipeline": true,
+    "download": false,
+    "authorized": true,
+    "publishing": "unapproved",
+    "title": "Replay",
+    "hook": "Local replay",
+    "caption": "Unpublished",
+    "status": "idea",
+    "approvalRequired": true,
+    "inboxMarkerId": null,
+    "sampleManifestSchema": "tippy.sample-manifest.v1",
+    "sampleManifestId": "vod-synthetic-quiet",
+    "sampleId": "smp-quiet"
+  },
+  "grants": [],
+  "events": [
+    {
+      "id": "evt-id-claim"
+    }
+  ],
+  "manifest": {
+    "schema": "tippy.sample-manifest.v1",
+    "id": "vod-synthetic-quiet",
+    "footage": "synthetic",
+    "samples": [
+      {
+        "id": "smp-quiet",
+        "source": "/local/vod/synthetic-quiet.mp4",
+        "startSec": 0,
+        "endSec": 30,
+        "durationSec": 30,
+        "detectionReason": "synthetic quiet speech",
+        "classification": [
+          "quiet_speech"
+        ],
+        "audioTracks": [
+          {
+            "index": 0,
+            "codec": "aac",
+            "channels": 2,
+            "language": "eng"
+          }
+        ]
+      }
+    ]
+  }
+}

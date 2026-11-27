@@ -1,0 +1,74 @@
+{
+  "fixtureSchema": "tippy.contract-fixture.v1",
+  "id": "valid-synthetic-manifest",
+  "expect": "accept",
+  "code": null,
+  "ownerId": "owner-1",
+  "source": "/local/vod/synthetic-quiet.mp4",
+  "catalog": [
+    "vod-synthetic-quiet"
+  ],
+  "clip": {
+    "schema": "tippy.clip-contract.v1",
+    "sourcePath": "vod_intelligence",
+    "mediaRights": "creator_owned",
+    "storage": "creator_inventory",
+    "processing": "authorized_only",
+    "editingPipeline": true,
+    "download": false,
+    "authorized": true,
+    "publishing": "unapproved",
+    "title": "Replay",
+    "hook": "Local replay",
+    "caption": "Unpublished",
+    "status": "idea",
+    "approvalRequired": true,
+    "inboxMarkerId": null,
+    "sampleManifestSchema": "tippy.sample-manifest.v1",
+    "sampleManifestId": "vod-synthetic-quiet",
+    "sampleId": "smp-quiet"
+  },
+  "grants": [
+    {
+      "schema": "tippy.consent-grant.v1",
+      "id": "grant-path-c",
+      "ownerId": "owner-1",
+      "source": "/local/vod/synthetic-quiet.mp4",
+      "timestamp": "2026-11-27T00:00:00.000Z",
+      "scope": "local_edit",
+      "revokedAt": null,
+      "hash": "7264f02e92c08bd6b24a09a835de96cd7fbb6344227e8d8fa127b088e5c0fc39"
+    }
+  ],
+  "events": [
+    {
+      "id": "evt-manifest"
+    }
+  ],
+  "manifest": {
+    "schema": "tippy.sample-manifest.v1",
+    "id": "vod-synthetic-quiet",
+    "footage": "synthetic",
+    "samples": [
+      {
+        "id": "smp-quiet",
+        "source": "/local/vod/synthetic-quiet.mp4",
+        "startSec": 0,
+        "endSec": 30,
+        "durationSec": 30,
+        "detectionReason": "synthetic quiet speech",
+        "classification": [
+          "quiet_speech"
+        ],
+        "audioTracks": [
+          {
+            "index": 0,
+            "codec": "aac",
+            "channels": 2,
+            "language": "eng"
+          }
+        ]
+      }
+    ]
+  }
+}

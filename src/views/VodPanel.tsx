@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 
+import { createLocalEditGrant } from "../obs/captureContracts";
 import { VOD_STEPS } from "../obs/mediaHandoff";
 import { decideDesktopProcessing, UNKNOWN_GPU, type ObsObservation, type ProcessingMode } from "../obs/scheduler";
 import { planReplayManifest } from "../obs/sidecarPlan";
@@ -14,6 +15,7 @@ interface VodPanelProps {
   replayPath: string;
   replayAuthorized: boolean;
   replaySavedAt: string;
+  editGrants: readonly unknown[];
 }
 
 const EMPTY_ACTIVITY: ObsObservation = {
@@ -33,6 +35,7 @@ export function VodPanel({
   replayPath,
   replayAuthorized,
   replaySavedAt,
+  editGrants,
 }: VodPanelProps) {
   const decision = decideDesktopProcessing({
     requestedMode: mode,
@@ -179,6 +182,15 @@ export function VodPanel({
       setProgress("not_selected");
       return;
     }
+    const file = listed[0] ?? "";
+    const grants = authorized && file
+      ? [createLocalEditGrant({
+        id: `vod:${file}`,
+        ownerId,
+        source: file,
+        timestamp: new Date().toISOString(),
+      })]
+      : [];
     const result = await desk.edit({
       manifestPath: workDir ? `${workDir}/manifest.json` : "",
       ownerId,
@@ -187,6 +199,8 @@ export function VodPanel({
       mode,
       activity,
       resources: { suspendProcessing },
+      source: file,
+      grants,
     });
     if (!result.ok) {
       setProgress(result.reason);
@@ -205,7 +219,7 @@ export function VodPanel({
         consent: "creator_authorized_local_replay" as const,
       }
       : null;
-    const planned = planReplayManifest({ grant, category, durationSec: 30 });
+    const planned = planReplayManifest({ grant, editGrants, category, durationSec: 30 });
     setProgress(planned.ok ? "Replay manifest is ready for the local pipeline." : planned.reason);
   }
 }

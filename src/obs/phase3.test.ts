@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
+import { createLocalEditGrant } from './captureContracts'
 import { planObsReplayGrant } from './mediaHandoff'
 import { decideDesktopProcessing, type ObsObservation } from './scheduler'
 import { planAuthorize, planEdit, planReplayManifest, planScan } from './sidecarPlan'
@@ -148,6 +149,23 @@ test('selected samples go to the pipeline edit command and live mode refuses it'
     activity: LIVE_OBS,
   })
   assert.equal(refused.ok, false)
+  const editGrant = createLocalEditGrant({
+    id: 'grant-1',
+    ownerId: 'owner_test',
+    source: '/videos/one.mkv',
+    timestamp: '2026-11-27T00:00:00.000Z',
+  })
+  const missingGrant = planEdit({
+    enabled: true,
+    paths: PATHS,
+    manifestPath: '/tmp/tippy-work/manifest.json',
+    ownerId: 'owner_test',
+    sampleId: 'smp-1',
+    selected: true,
+    mode: 'balanced',
+    activity: IDLE,
+  })
+  assert.equal(missingGrant.ok, false)
   const sent = planEdit({
     enabled: true,
     paths: PATHS,
@@ -157,6 +175,8 @@ test('selected samples go to the pipeline edit command and live mode refuses it'
     selected: true,
     mode: 'balanced',
     activity: IDLE,
+    source: '/videos/one.mkv',
+    grants: [editGrant],
   })
   assert.equal(sent.ok, true)
   if (sent.ok) {
@@ -186,15 +206,23 @@ test('a checked OBS replay becomes a manifest only after the creator picks a cat
     uploadAuthorized: true,
   }
   const grant = planObsReplayGrant(item, 'owner_test')
-  const unlabeled = planReplayManifest({ grant, category: '', durationSec: 30 })
+  const editGrant = createLocalEditGrant({
+    id: item.idempotencyKey,
+    ownerId: 'owner_test',
+    source: item.localPath,
+    timestamp: '2026-11-27T00:00:00.000Z',
+  })
+  const unlabeled = planReplayManifest({ grant, editGrants: [editGrant], category: '', durationSec: 30 })
   assert.equal(unlabeled.ok, false)
-  const labeled = planReplayManifest({ grant, category: 'loud_reaction', durationSec: 30 })
+  const labeled = planReplayManifest({ grant, editGrants: [editGrant], category: 'loud_reaction', durationSec: 30 })
   assert.equal(labeled.ok, true)
   if (labeled.ok) {
     assert.equal(labeled.manifest.schema, 'tippy.sample-manifest.v1')
     assert.equal(labeled.manifest.authorization.consent, 'creator_authorized_local_replay')
     assert.equal(labeled.manifest.samples[0]?.source, '/videos/replay.mkv')
   }
-  const tooLong = planReplayManifest({ grant, category: 'loud_reaction', durationSec: 121 })
+  const tooLong = planReplayManifest({ grant, editGrants: [editGrant], category: 'loud_reaction', durationSec: 121 })
+  const rightsOnly = planReplayManifest({ grant, category: 'loud_reaction', durationSec: 30 })
+  assert.equal(rightsOnly.ok, false)
   assert.equal(tooLong.ok, false)
 })

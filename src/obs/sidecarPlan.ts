@@ -1,4 +1,4 @@
-import { SAMPLE_MANIFEST_SCHEMA } from './captureContracts'
+import { requireLocalEditGrant, SAMPLE_MANIFEST_SCHEMA } from './captureContracts'
 import type { ObsReplayGrant } from './mediaHandoff'
 import { decideDesktopProcessing, UNKNOWN_GPU, type GpuObservation, type ObsObservation, type ProcessingMode } from './scheduler'
 
@@ -106,12 +106,20 @@ export function planEdit(input: {
   activity: ObsObservation
   gpu?: GpuObservation
   resources?: { suspendProcessing: boolean }
+  source?: string
+  grants?: readonly unknown[]
 }): PlanResult {
   const gate = gatePaths(input.enabled, input.paths)
   if (!gate.ok) return gate
   if (input.resources?.suspendProcessing) return { ok: false, reason: 'resources_suspended' }
   if (!input.selected) return { ok: false, reason: 'not_selected' }
   if (!isLocalPath(input.manifestPath)) return { ok: false, reason: 'remote_refused' }
+  const allowed = requireLocalEditGrant({
+    ownerId: input.ownerId,
+    source: input.source ?? '',
+    grants: input.grants ?? [],
+  })
+  if (!allowed.ok) return { ok: false, reason: allowed.reason }
   const decision = decideDesktopProcessing({
     requestedMode: input.mode,
     obs: input.activity,
@@ -153,11 +161,18 @@ export interface ReplayManifest {
 
 export function planReplayManifest(input: {
   grant: ObsReplayGrant | null
+  editGrants?: readonly unknown[]
   category: string
   durationSec: number
 }): { ok: true; manifest: ReplayManifest } | { ok: false; reason: string } {
   if (!input.grant) return { ok: false, reason: 'not_authorized' }
   if (!isLocalPath(input.grant.replayPath)) return { ok: false, reason: 'remote_refused' }
+  const allowed = requireLocalEditGrant({
+    ownerId: input.grant.ownerId,
+    source: input.grant.replayPath,
+    grants: input.editGrants ?? [],
+  })
+  if (!allowed.ok) return { ok: false, reason: allowed.reason }
   if (!isBenchmarkCategory(input.category)) return { ok: false, reason: 'category_required' }
   if (!Number.isFinite(input.durationSec) || input.durationSec <= 0 || input.durationSec > 120) {
     return { ok: false, reason: 'window_exceeds_120s' }
