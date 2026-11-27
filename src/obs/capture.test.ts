@@ -240,8 +240,21 @@ test('reads whether OBS is streaming or recording', async () => {
   await withObs({ streaming: true }, async (fixture) => {
     await connect(fixture)
     const activity = await fixture.app.outputActivity()
-    assert.deepEqual(activity, { streaming: true, recording: false })
+    assert.equal(activity.processDetected, true)
+    assert.equal(activity.streaming, true)
+    assert.equal(activity.recording, false)
+    assert.equal(activity.droppedFrames, 0)
+    assert.equal(activity.laggedFrames, 0)
     assertAllowlist(fixture.server)
+  })
+})
+
+test('GetStats skipped frames are dropped and lagged counts', async () => {
+  await withObs({ outputSkippedFrames: 3, renderSkippedFrames: 2 }, async (fixture) => {
+    await connect(fixture)
+    const activity = await fixture.app.outputActivity()
+    assert.equal(activity.droppedFrames, 3)
+    assert.equal(activity.laggedFrames, 2)
   })
 })
 

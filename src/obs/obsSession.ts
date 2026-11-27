@@ -123,10 +123,20 @@ export class ObsSession {
   }
 
   async diskFreeMb(): Promise<number | null> {
+    return (await this.readStats()).diskFreeMb
+  }
+
+  async readStats(): Promise<{ diskFreeMb: number | null; droppedFrames: number | null; laggedFrames: number | null }> {
     const data = await this.call('GetStats', null, false)
-    if (!data || typeof data !== 'object' || !('availableDiskSpace' in data)) return null
-    const free = data.availableDiskSpace
-    return typeof free === 'number' && Number.isFinite(free) ? free : null
+    if (!data || typeof data !== 'object') {
+      return { diskFreeMb: null, droppedFrames: null, laggedFrames: null }
+    }
+    const record = data as unknown as Record<string, unknown>
+    return {
+      diskFreeMb: finiteNumber(record.availableDiskSpace),
+      droppedFrames: finiteNumber(record.outputSkippedFrames),
+      laggedFrames: finiteNumber(record.renderSkippedFrames),
+    }
   }
 
   async lastReplayPath(duringSave: boolean): Promise<string | null> {
@@ -262,6 +272,10 @@ export class ObsSession {
     this.version = null
     await withTimeout(this.obs.disconnect(), 2000, new CaptureError('disconnected', 'Disconnect timed out.')).catch(() => undefined)
   }
+}
+
+function finiteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
 function outputActive(value: unknown): boolean {

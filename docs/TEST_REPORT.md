@@ -15,12 +15,12 @@ cargo +1.91.0 test --locked --manifest-path src-tauri/Cargo.toml --lib
 `npm test` (Vitest 3.2.7) exited 0:
 
 ```
-Test Files  12 passed (12)
-     Tests  48 passed (48)
-  Duration  3.22s
+Test Files  13 passed (13)
+     Tests  51 passed (51)
+  Duration  3.23s
 ```
 
-That includes the existing shell tests (Home, Tippy rail, team, format) and the OBS tests: auth failure, replay off, save, duplicate save, disconnect mid-save, adopt after disconnect, two device ids, audio threshold, chat flag, pre-stream check, reconnect after a dropped socket, no retry after a bad password, the global-shortcut binder, the keychain vault contract, the Path B grant, the VOD stub, and the Capture screen render.
+That includes the existing shell tests (Home, Tippy rail, team, format) and the OBS tests: auth failure, replay off, save, duplicate save, disconnect mid-save, adopt after disconnect, two device ids, audio threshold, chat flag, pre-stream check, reconnect after a dropped socket, no retry after a bad password, the global-shortcut binder, the keychain vault contract, the Path B grant, the VOD stub, the Capture screen render, `tippy.scheduler.v1`, `GetStats` skipped frames, and `tippy.clip-contract.v1`.
 
 ```
 rustc --edition 2021 --test src-tauri/src/http_framing.rs
@@ -48,8 +48,9 @@ exited 0. 2 passed. A header packet is incomplete until `Content-Length` bytes a
 | StreamersTip token in the OS keychain | PASS for the vault contract. The OS keychain call is BLOCKED |
 | Path B handoff to tippy-media | PASS as a local grant. The pipeline was not called |
 | VOD sidecar plan | PASS for argv, cancel, and the flag. The Node process was not spawned |
-| Processing mode | PASS. Performance drops to Live while OBS output is active |
-| OBS stream and record status | PASS against a mock. A real OBS output was not read |
+| Processing mode | PASS for `tippy.scheduler.v1`. Streaming, recording, dropped frames, or lagged frames force Live. OBS open and idle drops Performance to Balanced. A real GPU was not measured |
+| Clip contract | PASS. Path A cannot enter editing. Paths B and C stay out of the inbox while `tippy_creator_inbox_enabled` is off |
+| OBS stream and record status | PASS against a mock, including `GetStats` skipped frames. A real OBS output was not read |
 | VOD intelligence screen | PASS as a flagged UI. The scanner and pipeline were not executed |
 | Pre-stream check | PASS. A second search still found no StreamReady module |
 | Windows OBS | NOT RUN |

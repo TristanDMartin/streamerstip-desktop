@@ -174,8 +174,22 @@ export class TippyApp {
     }
   }
 
-  async outputActivity(): Promise<{ streaming: boolean; recording: boolean }> {
-    return this.session.readOutputActivity()
+  async outputActivity(): Promise<{
+    processDetected: true
+    streaming: boolean
+    recording: boolean
+    droppedFrames: number | null
+    laggedFrames: number | null
+  }> {
+    const outputs = await this.session.readOutputActivity()
+    const stats = await this.session.readStats()
+    return {
+      processDetected: true,
+      streaming: outputs.streaming,
+      recording: outputs.recording,
+      droppedFrames: stats.droppedFrames,
+      laggedFrames: stats.laggedFrames,
+    }
   }
 
   async disconnect(): Promise<void> {

@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
-import { CAPTURE_PATHS } from './captureContracts'
 import { planObsReplayGrant } from './mediaHandoff'
-import { resolveProcessingMode } from './processingMode'
+import { decideDesktopProcessing, type ObsObservation } from './scheduler'
 import { planAuthorize, planEdit, planReplayManifest, planScan } from './sidecarPlan'
 import type { SidecarRun as PlannedRun } from './sidecarPlan'
 import { VodDesk } from './vodDesk'
@@ -13,22 +12,67 @@ const PATHS = {
   workDir: '/tmp/tippy-work',
 }
 
-const IDLE = { streaming: false, recording: false }
-const LIVE_OBS = { streaming: true, recording: false }
+const IDLE: ObsObservation = {
+  processDetected: false,
+  streaming: false,
+  recording: false,
+  droppedFrames: 0,
+  laggedFrames: 0,
+}
+const LIVE_OBS: ObsObservation = {
+  processDetected: true,
+  streaming: true,
+  recording: false,
+  droppedFrames: 0,
+  laggedFrames: 0,
+}
 
-test('processing drops to live while OBS is streaming or recording', () => {
-  const dropped = resolveProcessingMode('performance', LIVE_OBS)
-  assert.equal(dropped.effective, 'live')
-  assert.equal(dropped.downgraded, true)
-  assert.equal(dropped.allowEdit, false)
-  assert.equal(dropped.asr, 'off')
-  assert.equal(dropped.network, 'none')
-  const recording = resolveProcessingMode('balanced', { streaming: false, recording: true })
-  assert.equal(recording.effective, 'live')
-  const offline = resolveProcessingMode('performance', IDLE)
-  assert.equal(offline.effective, 'performance')
-  assert.equal(offline.asr, 'local')
-  assert.equal(offline.allowEdit, true)
+test('tippy.scheduler.v1 drops to live for output, drops, or lag', () => {
+  const streaming = decideDesktopProcessing({
+    requestedMode: 'performance',
+    obs: LIVE_OBS,
+    gpu: { cudaAvailable: true, nvencAvailable: true, vramTotalMb: 12288, vramUsedMb: 1000, encoderSessions: 0 },
+  })
+  assert.equal(streaming.policy, 'tippy.scheduler.v1')
+  assert.equal(streaming.effectiveMode, 'live')
+  assert.equal(streaming.downgraded, true)
+  assert.equal(streaming.allowRender, false)
+  assert.equal(streaming.allowCapture, true)
+  assert.equal(streaming.reasons.includes('obs_streaming'), true)
+  assert.equal(streaming.processesWhileStreaming, false)
+  const recording = decideDesktopProcessing({
+    requestedMode: 'balanced',
+    obs: { ...IDLE, processDetected: true, recording: true },
+    gpu: { cudaAvailable: false, nvencAvailable: false, vramTotalMb: null, vramUsedMb: null, encoderSessions: null },
+  })
+  assert.equal(recording.effectiveMode, 'live')
+  assert.equal(recording.reasons.includes('obs_recording'), true)
+  const lagged = decideDesktopProcessing({
+    requestedMode: 'performance',
+    obs: { ...IDLE, processDetected: true, laggedFrames: 4 },
+    gpu: { cudaAvailable: true, nvencAvailable: true, vramTotalMb: 12288, vramUsedMb: 1000, encoderSessions: 0 },
+  })
+  assert.equal(lagged.effectiveMode, 'live')
+  assert.equal(lagged.reasons.includes('frame_drops'), true)
+  const open = decideDesktopProcessing({
+    requestedMode: 'performance',
+    obs: { ...IDLE, processDetected: true },
+    gpu: { cudaAvailable: true, nvencAvailable: true, vramTotalMb: 12288, vramUsedMb: 1000, encoderSessions: 0 },
+  })
+  assert.equal(open.effectiveMode, 'balanced')
+  assert.equal(open.reasons.includes('obs_process'), true)
+  assert.equal(open.vramHeadroomMb, 2048)
+  assert.equal(open.maxGpuEncoderSessions, 1)
+  assert.equal(open.cpuPriority, 'below_normal')
+  const offline = decideDesktopProcessing({
+    requestedMode: 'performance',
+    obs: IDLE,
+    gpu: { cudaAvailable: true, nvencAvailable: true, vramTotalMb: 12288, vramUsedMb: 1000, encoderSessions: 0 },
+  })
+  assert.equal(offline.effectiveMode, 'performance')
+  assert.equal(offline.allowTranscription, true)
+  assert.equal(offline.allowRender, true)
+  assert.equal(offline.vramHeadroomMb, 512)
 })
 
 test('the scanner sidecar is not spawned until the flag and a local grant exist', async () => {
@@ -153,6 +197,4 @@ test('a checked OBS replay becomes a manifest only after the creator picks a cat
   }
   const tooLong = planReplayManifest({ grant, category: 'loud_reaction', durationSec: 121 })
   assert.equal(tooLong.ok, false)
-  assert.equal(CAPTURE_PATHS.A.desktopRuns, false)
-  assert.equal(CAPTURE_PATHS.C.manifest, 'tippy.sample-manifest.v1')
 })

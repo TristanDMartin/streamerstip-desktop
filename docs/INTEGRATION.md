@@ -95,17 +95,19 @@ The pipeline's `ClipCandidate` (`ownerId`, `state`, `window`, `assetRef`, `sourc
 
 ## Processing mode
 
-`services/tippy-media` has no scheduling module yet. Desktop uses `resolveProcessingMode` until that module lands. Settings offers Live, Balanced, and Performance. Live keeps detection and capture and does not edit. Balanced can send one selected sample. Performance can ask the scanner for local ASR and can edit. If `GetStreamStatus` or `GetRecordStatus` says OBS is streaming or recording, the effective mode becomes Live. No mode opens the network.
+Desktop mirrors `services/tippy-media/src/scheduler.ts` (`tippy.scheduler.v1`) in `src/obs/scheduler.ts`. A cross-repo import is not practical, so the file is a copy and `decideDesktopProcessing` refuses any policy string other than `tippy.scheduler.v1`. Live still detects and captures. Balanced allows one GPU encode, below-normal priority, and keeps 2048 MB of VRAM free. Performance stays on GPU only while OBS is closed. Streaming, recording, dropped frames (`GetStats.outputSkippedFrames`), or lagged frames (`GetStats.renderSkippedFrames`) force Live. No mode opens the network.
 
 ## Three capture paths
 
-`lib/tippy/contracts` is not on `cursor/tippy-vod-scanner-fcb2` or `cursor/tippy-media-pipeline`. Desktop records the same three paths locally:
+`lib/tippy/contracts/mediaPaths.ts` on `cursor/tippy-live-clips-week1-2435` at `6b92cf83` is `tippy.clip-contract.v1`. Desktop mirrors it in `src/obs/captureContracts.ts` and refuses any other schema. `docs/TIPPY_MEDIA_CONTRACTS.md` is the source of the field names.
 
-| Path | Id | Desktop |
-| --- | --- | --- |
-| A Twitch | `tippy.capture.twitch.v1` | Link and embed only. This app does not download it. |
-| B OBS replay | `tippy.capture.obs-replay.v1` | A checked inventory row. The creator also picks a benchmark category. The manifest is `tippy.sample-manifest.v1`. |
-| C VOD | `tippy.capture.vod.v1` | `createVodDesktopApi()` on PR #84, consent `creator_authorized_local_folder`. |
+| Path | sourcePath | mediaRights | Desktop |
+| --- | --- | --- | --- |
+| A Twitch | `twitch_live` | `twitch_hosted` | Link and embed only. `editingPipeline` is false. It cannot enter editing. |
+| B OBS replay | `obs_replay` | `creator_owned` | A checked inventory row. `publishing` stays `unapproved`. |
+| C VOD | `vod_intelligence` | `creator_owned` | References `sampleManifestId` on `tippy.sample-manifest.v1`. |
+
+Paths B and C stay out of the inbox while `tippy_creator_inbox_enabled` is off. That flag defaults off.
 
 ## VOD intelligence
 

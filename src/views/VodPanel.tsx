@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { VOD_STEPS } from "../obs/mediaHandoff";
-import { resolveProcessingMode, type OutputActivity, type ProcessingMode } from "../obs/processingMode";
+import { decideDesktopProcessing, UNKNOWN_GPU, type ObsObservation, type ProcessingMode } from "../obs/scheduler";
 import { planReplayManifest } from "../obs/sidecarPlan";
 import { VodDesk, type SidecarRunner } from "../obs/vodDesk";
 
@@ -9,13 +9,19 @@ interface VodPanelProps {
   enabled: boolean;
   ownerId: string;
   mode: ProcessingMode;
-  activity: OutputActivity;
+  activity: ObsObservation;
   replayPath: string;
   replayAuthorized: boolean;
   replaySavedAt: string;
 }
 
-const EMPTY_ACTIVITY: OutputActivity = { streaming: false, recording: false };
+const EMPTY_ACTIVITY: ObsObservation = {
+  processDetected: false,
+  streaming: false,
+  recording: false,
+  droppedFrames: null,
+  laggedFrames: null,
+};
 
 export function VodPanel({
   enabled,
@@ -26,7 +32,11 @@ export function VodPanel({
   replayAuthorized,
   replaySavedAt,
 }: VodPanelProps) {
-  const decision = resolveProcessingMode(mode, activity);
+  const decision = decideDesktopProcessing({
+    requestedMode: mode,
+    obs: activity,
+    gpu: UNKNOWN_GPU,
+  });
   const [folder, setFolder] = useState("");
   const [files, setFiles] = useState("");
   const [cli, setCli] = useState("");
@@ -54,8 +64,8 @@ export function VodPanel({
       </p>
       <p>
         {decision.downgraded
-          ? "OBS is streaming or recording, so processing stays on Live."
-          : `Processing is ${decision.effective}.`}
+          ? `Processing stays on ${decision.effectiveMode} (${decision.reasons.join(", ")}).`
+          : `Processing is ${decision.effectiveMode}. Policy ${decision.policy}.`}
       </p>
       <ol>
         {VOD_STEPS.map((step) => (

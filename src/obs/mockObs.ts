@@ -16,6 +16,8 @@ export interface MockObsOptions {
   platform?: string
   streaming?: boolean
   recording?: boolean
+  outputSkippedFrames?: number
+  renderSkippedFrames?: number
 }
 
 interface RequestPayload {
@@ -43,6 +45,8 @@ export class MockObs {
   replayActive: boolean
   streaming: boolean
   recording: boolean
+  outputSkippedFrames: number
+  renderSkippedFrames: number
   availableDiskSpaceMb: number
   replayPath = ''
   closeOnSave: boolean
@@ -64,6 +68,8 @@ export class MockObs {
     this.replayActive = options.replayActive ?? true
     this.streaming = options.streaming ?? false
     this.recording = options.recording ?? false
+    this.outputSkippedFrames = options.outputSkippedFrames ?? 0
+    this.renderSkippedFrames = options.renderSkippedFrames ?? 0
     this.availableDiskSpaceMb = options.availableDiskSpaceMb ?? 100_000
     this.closeOnSave = options.closeOnSave ?? false
     this.commitThenClose = options.commitThenClose ?? false
@@ -176,9 +182,9 @@ export class MockObs {
         availableDiskSpace: this.availableDiskSpaceMb,
         activeFps: 60,
         averageFrameRenderTime: 1,
-        renderSkippedFrames: 0,
+        renderSkippedFrames: this.renderSkippedFrames,
         renderTotalFrames: 1,
-        outputSkippedFrames: 0,
+        outputSkippedFrames: this.outputSkippedFrames,
         outputTotalFrames: 1,
         webSocketSessionIncomingMessages: 1,
         webSocketSessionOutgoingMessages: 1,

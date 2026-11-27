@@ -1,5 +1,5 @@
 import { planAuthorize, planEdit, planScan, type PlanResult, type SidecarPaths, type SidecarRun } from './sidecarPlan'
-import type { OutputActivity, ProcessingMode } from './processingMode'
+import type { GpuObservation, ObsObservation, ProcessingMode } from './scheduler'
 
 export interface SidecarResult {
   code: number
@@ -34,7 +34,8 @@ export class VodDesk {
     filePath: string
     authorized: boolean
     mode: ProcessingMode
-    activity: OutputActivity
+    activity: ObsObservation
+    gpu?: GpuObservation
     onLine?: (line: string) => void
   }): Promise<PlanResult & { result?: SidecarResult }> {
     return this.execute(planScan({ ...input, enabled: this.enabled, paths: this.paths }), input.onLine)
@@ -46,7 +47,8 @@ export class VodDesk {
     sampleId: string
     selected: boolean
     mode: ProcessingMode
-    activity: OutputActivity
+    activity: ObsObservation
+    gpu?: GpuObservation
     onLine?: (line: string) => void
   }): Promise<PlanResult & { result?: SidecarResult }> {
     return this.execute(planEdit({ ...input, enabled: this.enabled, paths: this.paths }), input.onLine)

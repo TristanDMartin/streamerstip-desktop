@@ -1,6 +1,25 @@
-import { isBenchmarkCategory, SAMPLE_MANIFEST_SCHEMA, type BenchmarkCategory } from './captureContracts'
+import { SAMPLE_MANIFEST_SCHEMA } from './captureContracts'
 import type { ObsReplayGrant } from './mediaHandoff'
-import { resolveProcessingMode, type OutputActivity, type ProcessingMode } from './processingMode'
+import { decideDesktopProcessing, UNKNOWN_GPU, type GpuObservation, type ObsObservation, type ProcessingMode } from './scheduler'
+
+const BENCHMARK_CATEGORIES = [
+  'gta',
+  'fps',
+  'horror',
+  'with_facecam',
+  'without_facecam',
+  'spoken_commentary',
+  'loud_reaction',
+  'quiet_speech',
+  'background_music',
+  'multiple_audio_sources',
+] as const
+
+type BenchmarkCategory = (typeof BENCHMARK_CATEGORIES)[number]
+
+function isBenchmarkCategory(value: string): value is BenchmarkCategory {
+  return (BENCHMARK_CATEGORIES as readonly string[]).includes(value)
+}
 
 export interface SidecarPaths {
   nodePath: string
@@ -47,13 +66,18 @@ export function planScan(input: {
   filePath: string
   authorized: boolean
   mode: ProcessingMode
-  activity: OutputActivity
+  activity: ObsObservation
+  gpu?: GpuObservation
 }): PlanResult {
   const gate = gatePaths(input.enabled, input.paths)
   if (!gate.ok) return gate
   if (!input.authorized) return { ok: false, reason: 'not_authorized' }
   if (!isLocalPath(input.filePath) || !isLocalPath(input.grantPath)) return { ok: false, reason: 'remote_refused' }
-  const decision = resolveProcessingMode(input.mode, input.activity)
+  const decision = decideDesktopProcessing({
+    requestedMode: input.mode,
+    obs: input.activity,
+    gpu: input.gpu ?? UNKNOWN_GPU,
+  })
   const out = joinPath(input.paths.workDir, 'extracted')
   if (isInside(out, parentOf(input.filePath))) return { ok: false, reason: 'output_inside_source' }
   return {
@@ -63,7 +87,7 @@ export function planScan(input: {
       '--grant', input.grantPath,
       '--out', out,
       '--file', input.filePath,
-      '--asr', decision.asr,
+      '--asr', decision.allowTranscription ? 'local' : 'off',
       '--footage', 'authorized_local',
     ]),
   }
@@ -77,15 +101,19 @@ export function planEdit(input: {
   sampleId: string
   selected: boolean
   mode: ProcessingMode
-  activity: OutputActivity
+  activity: ObsObservation
+  gpu?: GpuObservation
 }): PlanResult {
   const gate = gatePaths(input.enabled, input.paths)
   if (!gate.ok) return gate
   if (!input.selected) return { ok: false, reason: 'not_selected' }
   if (!isLocalPath(input.manifestPath)) return { ok: false, reason: 'remote_refused' }
-  const decision = resolveProcessingMode(input.mode, input.activity)
-  if (!decision.allowEdit) return { ok: false, reason: 'mode_blocks_edit' }
-  if (decision.maxSamples === 0) return { ok: false, reason: 'mode_blocks_edit' }
+  const decision = decideDesktopProcessing({
+    requestedMode: input.mode,
+    obs: input.activity,
+    gpu: input.gpu ?? UNKNOWN_GPU,
+  })
+  if (!decision.allowRender || decision.maxGpuEncoderSessions === 0) return { ok: false, reason: 'mode_blocks_edit' }
   const out = joinPath(input.paths.workDir, 'rendered')
   return {
     ok: true,

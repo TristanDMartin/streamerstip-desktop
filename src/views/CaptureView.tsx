@@ -10,7 +10,7 @@ import {
   type StoredClip,
 } from "../obs/inventory";
 import { planObsReplayGrant } from "../obs/mediaHandoff";
-import { isProcessingMode, type ProcessingMode } from "../obs/processingMode";
+import { isProcessingMode, type ObsObservation, type ProcessingMode } from "../obs/scheduler";
 import { obsReadiness } from "../obs/readiness";
 import { VodPanel } from "./VodPanel";
 
@@ -21,6 +21,14 @@ interface CaptureViewProps {
   chatEnabled: boolean;
   vodEnabled: boolean;
 }
+
+const idleObservation: ObsObservation = {
+  processDetected: false,
+  streaming: false,
+  recording: false,
+  droppedFrames: null,
+  laggedFrames: null,
+};
 
 export function CaptureView({ deviceId, chatEnabled, vodEnabled }: CaptureViewProps) {
   const app = useMemo(
@@ -34,7 +42,7 @@ export function CaptureView({ deviceId, chatEnabled, vodEnabled }: CaptureViewPr
   const [consent, setConsent] = useState(false);
   const [hotkeyNote, setHotkeyNote] = useState("Registering the global shortcut.");
   const [mode, setMode] = useState<ProcessingMode>("live");
-  const [activity, setActivity] = useState({ streaming: false, recording: false });
+  const [activity, setActivity] = useState<ObsObservation>(idleObservation);
   const [inputName, setInputName] = useState("");
   const [inventory, setInventory] = useState<StoredClip[]>(() => loadInventory());
   const report = obsReadiness(status);
@@ -304,10 +312,7 @@ export function CaptureView({ deviceId, chatEnabled, vodEnabled }: CaptureViewPr
           type="button"
           className="secondary"
           onClick={() => {
-            void app.outputActivity().then(setActivity).catch(() => setActivity({
-              streaming: false,
-              recording: false,
-            }));
+            void app.outputActivity().then(setActivity).catch(() => setActivity(idleObservation));
           }}
         >
           Check OBS output
