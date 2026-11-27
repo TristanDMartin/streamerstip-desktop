@@ -24,7 +24,7 @@ This repository is the isolated desktop app. It does not change the StreamersTip
 - Packaging writes a local title and hook from the moment. QA checks that the Short is vertical, captioned, and ready to review. Nothing is published
 - A thin editor on the project: two video tracks, two audio tracks, an editable caption track, crop, one punch-in, a cut or short crossfade, a text overlay, audio volume, and shortcuts for play, split, delete, and undo. Save Version records “Saved this edit.”
 
-Publishing, Planner, a Premiere replacement, OBS, and live model calls are not in this build.
+Publishing, Planner, a Premiere replacement, and live model calls are not in this build. Capture saves an OBS replay on this PC. See below.
 
 ## Account seam
 
@@ -57,6 +57,16 @@ Create Short, or “Create 4 Shorts,” builds a draft from a ranked moment on t
 The same goal shows up as a Tippy team. Clip Scout, Short Editor, Packaging, and QA are worker cards, not separate chatbots. Two Short editors can run at once while Packaging and QA wait. Pause, resume, cancel, and retry act on the task. Job history keeps the explanation. Packaging only writes a title and hook on this machine. QA only checks the Short. Neither calls a model, and neither publishes.
 
 Local transcription uses `whisper-cli` from whisper.cpp. Tippy looks for that binary on `PATH`, then in `~/.local/bin`. It looks for a ggml model in `TIPPY_WHISPER_MODEL`, then `~/.local/share/tippy/ggml-tiny.en.bin`, then `/usr/local/share/tippy/ggml-tiny.en.bin`. Without that binary and model, the transcript job fails closed and says so. Scene detection, silence detection, and the rest of the import still finish.
+
+## OBS capture
+
+Open Capture in the sidebar. Tippy connects only to OBS on this computer (`127.0.0.1`, port 4455) with the WebSocket password. The replay file stays on this PC. Twitch clips are not downloaded, and nothing is uploaded.
+
+In OBS, enable the WebSocket server with a password and start the replay buffer. The pre-stream check on Capture turns ready when the socket is authenticated, the buffer is on, and the recording drive is not under 2048 MB. Save moment works with zero viewers and does not wait for chat. The shortcut is the operating-system chord CommandOrControl+Shift+F9. If the socket drops, Tippy reconnects with a delay of 1, 2, 4, 8, then 16 seconds, capped at 30. A wrong password does not retry. Calibrate the audio spike before turning it on. A checked clip is the only file that becomes a `creator_authorized_local_replay` grant. This build does not send it.
+
+Chat replay is off until `desktopChatReplay` is true in `flags.json` in the app data directory. The listener is then `POST http://127.0.0.1:4736/capture` with header `x-tippy-local: 1`. It does not read Twitch chat.
+
+`docs/ADR-001-desktop-stack.md` records the stack. `docs/INTEGRATION.md` is the contract. `docs/TEST_REPORT.md` has the manual script. Real OBS was not run in the agent that opened the draft pull request.
 
 ## Develop
 

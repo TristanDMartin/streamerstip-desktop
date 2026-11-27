@@ -1,0 +1,7 @@
+{
+  "name": "@streamerstip/tippy-contract-fixtures",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Versioned tippy.clip-contract.v1 and tippy.sample-manifest.v1 fixtures. Copy this directory; do not edit the JSON."
+}

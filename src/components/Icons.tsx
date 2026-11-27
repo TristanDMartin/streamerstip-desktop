@@ -82,6 +82,15 @@ export function IconBrand(props: IconProps) {
   );
 }
 
+export function IconCapture(props: IconProps) {
+  return (
+    <Stroke {...props}>
+      <circle cx="12" cy="12" r="7.5" />
+      <circle cx="12" cy="12" r="2.5" />
+    </Stroke>
+  );
+}
+
 export function IconUser(props: IconProps) {
   return (
     <Stroke {...props}>

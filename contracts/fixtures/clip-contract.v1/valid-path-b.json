@@ -1,0 +1,44 @@
+{
+  "fixtureSchema": "tippy.contract-fixture.v1",
+  "id": "valid-path-b",
+  "expect": "accept",
+  "code": null,
+  "ownerId": "owner-1",
+  "source": "/local/obs/replay.mp4",
+  "clip": {
+    "schema": "tippy.clip-contract.v1",
+    "sourcePath": "obs_replay",
+    "mediaRights": "creator_owned",
+    "storage": "creator_inventory",
+    "processing": "authorized_only",
+    "editingPipeline": true,
+    "download": false,
+    "authorized": true,
+    "publishing": "unapproved",
+    "inventoryId": "inv-1",
+    "title": "Replay",
+    "hook": "Local replay",
+    "caption": "Unpublished",
+    "status": "idea",
+    "approvalRequired": true,
+    "inboxMarkerId": null
+  },
+  "grants": [
+    {
+      "schema": "tippy.consent-grant.v1",
+      "id": "grant-path-b",
+      "ownerId": "owner-1",
+      "source": "/local/obs/replay.mp4",
+      "timestamp": "2026-11-27T00:00:00.000Z",
+      "scope": "local_edit",
+      "revokedAt": null,
+      "hash": "8f9d0827de17845bcf7cda0ef3ed65ed2f62b688870d8f2748178de0dc13cda1"
+    }
+  ],
+  "events": [
+    {
+      "id": "evt-path-b"
+    }
+  ],
+  "manifest": null
+}

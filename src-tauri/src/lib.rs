@@ -5,14 +5,19 @@ mod atomic;
 mod editor;
 mod error;
 mod flags;
+mod http_framing;
 mod jobs;
+mod keychain;
 mod log;
 mod media;
+mod obs_local;
 mod preview;
 mod project;
 mod runtime;
+mod resources;
 mod scout;
 mod service;
+mod sidecar;
 mod shorts;
 mod speech;
 mod team;
@@ -263,6 +268,52 @@ fn drain_gate(project_id: &str) -> Arc<Mutex<()>> {
         .clone()
 }
 
+#[tauri::command]
+fn stat_local_replay(path: String) -> Result<obs_local::ReplayStat, String> {
+    obs_local::replay_stat(std::path::Path::new(&path))
+}
+
+#[tauri::command]
+fn keychain_save(service: String, account: String, secret: String) -> Result<(), String> {
+    keychain::save(&service, &account, &secret)
+}
+
+#[tauri::command]
+fn keychain_load(service: String, account: String) -> Result<String, String> {
+    keychain::load(&service, &account)
+}
+
+#[tauri::command]
+fn keychain_clear(service: String, account: String) -> Result<(), String> {
+    keychain::clear(&service, &account)
+}
+
+#[tauri::command]
+fn sidecar_start(program: String, args: Vec<String>) -> Result<String, String> {
+    sidecar::start(&program, &args)
+}
+
+#[tauri::command]
+fn sidecar_cancel(id: String) -> Result<(), String> {
+    sidecar::cancel(&id)
+}
+
+#[tauri::command]
+fn sidecar_wait(id: String) -> Result<String, String> {
+    sidecar::wait(&id)
+}
+
+#[tauri::command]
+fn host_resources() -> resources::HostResources {
+    resources::read_host_metrics()
+}
+
+#[tauri::command]
+fn log_resource_decision(state: State<AppState>, line: String) -> Result<(), String> {
+    let path = state.log_path.with_file_name("resource-monitor.jsonl");
+    resources::append_decision(&path, &line)
+}
+
 fn data_dir(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
     if let Ok(path) = std::env::var("TIPPY_DATA_DIR") {
         if !path.trim().is_empty() {
@@ -276,6 +327,7 @@ fn data_dir(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             let dir = data_dir(app)?;
             let mut state = AppState::open(
@@ -298,6 +350,26 @@ pub fn run() {
             }
             let status = state.engine_status();
             log::log_line(&state.log_path, "info", &status.message);
+            if state.flags.desktop_chat_replay {
+                match obs_local::serve(app.handle().clone()) {
+                    Ok(origin) => log::log_line(
+                        &state.log_path,
+                        "info",
+                        &format!("OBS chat channel {origin}"),
+                    ),
+                    Err(err) => log::log_line(
+                        &state.log_path,
+                        "error",
+                        &format!("OBS chat channel failed: {err}"),
+                    ),
+                }
+            } else {
+                log::log_line(
+                    &state.log_path,
+                    "info",
+                    "OBS chat channel is off until desktopChatReplay is true",
+                );
+            }
             let ids = service::recover_all(&state);
             app.manage(state);
             for id in ids {
@@ -322,8 +394,27 @@ pub fn run() {
             undo_short_change,
             accept_short_changes,
             export_short,
-            edit_timeline
+            edit_timeline,
+            stat_local_replay,
+            keychain_save,
+            keychain_load,
+            keychain_clear,
+            sidecar_start,
+            sidecar_cancel,
+            sidecar_wait,
+            host_resources,
+            log_resource_decision
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tippy Desktop");
+}
+
+#[cfg(test)]
+mod hotkey_tests {
+    #[test]
+    fn the_global_shortcut_plugin_is_linked_and_is_not_registered_here() {
+        let builder = tauri_plugin_global_shortcut::Builder::<tauri::Wry>::new();
+        let _ = builder;
+        assert_eq!(crate::resources::CAPTURE_ACCELERATOR, "CommandOrControl+Shift+F9");
+    }
 }

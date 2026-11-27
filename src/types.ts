@@ -271,6 +271,8 @@ export interface FeatureFlags {
   desktopCreatorMemory: boolean;
   desktopMobileApproval: boolean;
   desktopOperatorMode: boolean;
+  desktopChatReplay: boolean;
+  desktopVodIntelligence: boolean;
 }
 
 export interface AppMeta {

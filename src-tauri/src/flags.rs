@@ -13,6 +13,10 @@ pub struct FeatureFlags {
     pub desktop_creator_memory: bool,
     pub desktop_mobile_approval: bool,
     pub desktop_operator_mode: bool,
+    #[serde(default)]
+    pub desktop_chat_replay: bool,
+    #[serde(default)]
+    pub desktop_vod_intelligence: bool,
 }
 
 impl Default for FeatureFlags {
@@ -24,6 +28,8 @@ impl Default for FeatureFlags {
             desktop_creator_memory: false,
             desktop_mobile_approval: false,
             desktop_operator_mode: false,
+            desktop_chat_replay: false,
+            desktop_vod_intelligence: false,
         }
     }
 }
