@@ -18,6 +18,7 @@ export interface MockObsOptions {
   recording?: boolean
   outputSkippedFrames?: number
   renderSkippedFrames?: number
+  networkDroppedFrames?: number
   outputCongestion?: number
   activeFps?: number
   averageFrameRenderTime?: number
@@ -51,6 +52,7 @@ export class MockObs {
   recording: boolean
   outputSkippedFrames: number
   renderSkippedFrames: number
+  networkDroppedFrames: number
   outputCongestion: number
   activeFps: number
   averageFrameRenderTime: number
@@ -78,6 +80,7 @@ export class MockObs {
     this.recording = options.recording ?? false
     this.outputSkippedFrames = options.outputSkippedFrames ?? 0
     this.renderSkippedFrames = options.renderSkippedFrames ?? 0
+    this.networkDroppedFrames = options.networkDroppedFrames ?? 0
     this.outputCongestion = options.outputCongestion ?? 0
     this.activeFps = options.activeFps ?? 60
     this.averageFrameRenderTime = options.averageFrameRenderTime ?? 1
@@ -211,6 +214,7 @@ export class MockObs {
       this.respond(socket, request, true, 100, undefined, {
         outputActive: this.streaming,
         outputCongestion: this.outputCongestion,
+        outputSkippedFrames: this.networkDroppedFrames,
       })
       return
     }

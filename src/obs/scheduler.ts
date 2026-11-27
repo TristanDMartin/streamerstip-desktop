@@ -33,6 +33,7 @@ export interface ObsObservation {
   recording: boolean
   droppedFrames: number | null
   laggedFrames: number | null
+  networkDroppedFrames?: number | null
 }
 
 export interface GpuObservation {
@@ -93,6 +94,8 @@ export function decideDesktopProcessing(input: SchedulerInput): SchedulerDecisio
 }
 
 function hasFrameDrops(obs: ObsObservation): boolean {
+  // droppedFrames is encoding lag. laggedFrames is render lag.
+  // networkDroppedFrames is a network condition and stays out of this check.
   return (obs.droppedFrames ?? 0) > 0 || (obs.laggedFrames ?? 0) > 0
 }
 

@@ -35,6 +35,9 @@ export interface ResourceSample {
   encoderSessions: number | null
   droppedFrames: number | null
   laggedFrames: number | null
+  renderLagFrames: number | null
+  encodingLagFrames: number | null
+  networkDroppedFrames: number | null
   averageFrameRenderTimeMs: number | null
   outputCongestion: number | null
   activeFps: number | null
@@ -48,6 +51,7 @@ export interface ResourceState {
   stableSinceMs: number | null
   previousDropped: number | null
   previousLagged: number | null
+  previousNetworkDropped: number | null
   suspendReasons: string[]
 }
 
@@ -58,6 +62,10 @@ export interface ResourceDecision {
   reasons: string[]
   atMs: number
   obsProcessDetected: boolean
+  renderLagFrames: number | null
+  encodingLagFrames: number | null
+  networkDroppedFrames: number | null
+  networkCondition: 'network_drops' | null
 }
 
 export interface HostReading {
@@ -75,6 +83,9 @@ export interface ObsReading {
   recording: boolean
   droppedFrames: number | null
   laggedFrames: number | null
+  renderLagFrames?: number | null
+  encodingLagFrames?: number | null
+  networkDroppedFrames?: number | null
   obsCpuPercent: number | null
   activeFps: number | null
   averageFrameRenderTimeMs: number | null
@@ -92,8 +103,11 @@ export function resourceSampleFrom(atMs: number, host: HostReading, obs: ObsRead
     vramUsedMb: host.vramUsedMb,
     encoderUtilPercent: host.encoderUtilPercent,
     encoderSessions: null,
-    droppedFrames: obs?.droppedFrames ?? null,
-    laggedFrames: obs?.laggedFrames ?? null,
+    droppedFrames: obs?.encodingLagFrames ?? obs?.droppedFrames ?? null,
+    laggedFrames: obs?.renderLagFrames ?? obs?.laggedFrames ?? null,
+    renderLagFrames: obs?.renderLagFrames ?? obs?.laggedFrames ?? null,
+    encodingLagFrames: obs?.encodingLagFrames ?? obs?.droppedFrames ?? null,
+    networkDroppedFrames: obs?.networkDroppedFrames ?? null,
     averageFrameRenderTimeMs: obs?.averageFrameRenderTimeMs ?? null,
     outputCongestion: obs?.outputCongestion ?? null,
     activeFps: obs?.activeFps ?? null,
@@ -109,6 +123,7 @@ export function initialResourceState(): ResourceState {
     stableSinceMs: null,
     previousDropped: null,
     previousLagged: null,
+    previousNetworkDropped: null,
     suspendReasons: ['not_measured'],
   }
 }
@@ -118,9 +133,10 @@ export function stepResourceMonitor(state: ResourceState, sample: ResourceSample
   decision: ResourceDecision
   logLine: string
 } {
-  const droppedDelta = counterDelta(state.previousDropped, sample.droppedFrames)
-  const laggedDelta = counterDelta(state.previousLagged, sample.laggedFrames)
-  const reasons = collectSuspendReasons(sample, droppedDelta, laggedDelta)
+  const encodingDelta = counterDelta(state.previousDropped, sample.encodingLagFrames)
+  const renderDelta = counterDelta(state.previousLagged, sample.renderLagFrames)
+  const networkDelta = counterDelta(state.previousNetworkDropped, sample.networkDroppedFrames)
+  const reasons = collectSuspendReasons(sample, encodingDelta, renderDelta)
   let phase = state.phase
   let stableSinceMs = state.stableSinceMs
   let suspendReasons = state.suspendReasons
@@ -129,7 +145,7 @@ export function stepResourceMonitor(state: ResourceState, sample: ResourceSample
     stableSinceMs = null
     suspendReasons = reasons
   } else if (phase === 'suspended') {
-    if (!canResume(sample, suspendReasons, droppedDelta, laggedDelta)) {
+    if (!canResume(sample, suspendReasons, encodingDelta, renderDelta)) {
       stableSinceMs = null
     } else if (stableSinceMs === null) {
       stableSinceMs = sample.atMs
@@ -142,8 +158,9 @@ export function stepResourceMonitor(state: ResourceState, sample: ResourceSample
   const next: ResourceState = {
     phase,
     stableSinceMs,
-    previousDropped: sample.droppedFrames ?? state.previousDropped,
-    previousLagged: sample.laggedFrames ?? state.previousLagged,
+    previousDropped: sample.encodingLagFrames ?? state.previousDropped,
+    previousLagged: sample.renderLagFrames ?? state.previousLagged,
+    previousNetworkDropped: sample.networkDroppedFrames ?? state.previousNetworkDropped,
     suspendReasons,
   }
   const decision: ResourceDecision = {
@@ -153,6 +170,10 @@ export function stepResourceMonitor(state: ResourceState, sample: ResourceSample
     reasons: phase === 'running' ? [] : suspendReasons,
     atMs: sample.atMs,
     obsProcessDetected: sample.obsProcessDetected,
+    renderLagFrames: sample.renderLagFrames,
+    encodingLagFrames: sample.encodingLagFrames,
+    networkDroppedFrames: sample.networkDroppedFrames,
+    networkCondition: networkDelta > 0 ? 'network_drops' : null,
   }
   return { state: next, decision, logLine: JSON.stringify(decision) }
 }
@@ -163,7 +184,7 @@ export function rememberResourceLog(existing: string, line: string): string {
   return lines.slice(-200).join('\n')
 }
 
-function collectSuspendReasons(sample: ResourceSample, droppedDelta: number, laggedDelta: number): string[] {
+function collectSuspendReasons(sample: ResourceSample, encodingDelta: number, renderDelta: number): string[] {
   const reasons: string[] = []
   if (sample.cpuPercent === null || sample.memoryPercent === null) reasons.push('not_measured')
   if (over(sample.cpuPercent, SUSPEND_AT.cpuPercent) || over(sample.obsCpuPercent, SUSPEND_AT.cpuPercent)) {
@@ -175,7 +196,8 @@ function collectSuspendReasons(sample: ResourceSample, droppedDelta: number, lag
   if (free !== null && free < SUSPEND_AT.vramFreeMb) reasons.push('vram')
   if (over(sample.encoderUtilPercent, SUSPEND_AT.encoderUtilPercent)) reasons.push('encoder')
   if (sample.encoderSessions !== null && sample.encoderSessions >= 1) reasons.push('encoder_sessions')
-  if (droppedDelta > 0 || laggedDelta > 0) reasons.push('frame_drops')
+  if (renderDelta > 0) reasons.push('render_lag')
+  if (encodingDelta > 0) reasons.push('encoding_lag')
   if (over(sample.averageFrameRenderTimeMs, SUSPEND_AT.frameRenderMs)) reasons.push('render_time')
   if (over(sample.outputCongestion, SUSPEND_AT.outputCongestion)) reasons.push('congestion')
   if ((sample.streaming || sample.recording) && sample.activeFps !== null && sample.activeFps < SUSPEND_AT.activeFps) {
@@ -184,7 +206,7 @@ function collectSuspendReasons(sample: ResourceSample, droppedDelta: number, lag
   return reasons
 }
 
-function canResume(sample: ResourceSample, reasons: readonly string[], droppedDelta: number, laggedDelta: number): boolean {
+function canResume(sample: ResourceSample, reasons: readonly string[], encodingDelta: number, renderDelta: number): boolean {
   if (sample.cpuPercent === null || sample.cpuPercent > RESUME_AT.cpuPercent) return false
   if (sample.obsCpuPercent !== null && sample.obsCpuPercent > RESUME_AT.cpuPercent) return false
   if (sample.memoryPercent === null || sample.memoryPercent > RESUME_AT.memoryPercent) return false
@@ -197,8 +219,9 @@ function canResume(sample: ResourceSample, reasons: readonly string[], droppedDe
   if (reasons.includes('encoder') && sample.encoderUtilPercent === null) return false
   if (sample.encoderSessions !== null && sample.encoderSessions > 0) return false
   if (reasons.includes('encoder_sessions') && sample.encoderSessions === null) return false
-  if (droppedDelta > 0 || laggedDelta > 0) return false
-  if (reasons.includes('frame_drops') && (sample.droppedFrames === null || sample.laggedFrames === null)) return false
+  if (renderDelta > 0 || encodingDelta > 0) return false
+  if (reasons.includes('render_lag') && sample.renderLagFrames === null) return false
+  if (reasons.includes('encoding_lag') && sample.encodingLagFrames === null) return false
   if (sample.averageFrameRenderTimeMs !== null && sample.averageFrameRenderTimeMs > RESUME_AT.frameRenderMs) return false
   if (reasons.includes('render_time') && sample.averageFrameRenderTimeMs === null) return false
   if (sample.outputCongestion !== null && sample.outputCongestion > RESUME_AT.outputCongestion) return false

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { onObsChatCapture } from "../api";
 import { TippyApp, type AppStatus } from "../obs/app";
+import { simulateChatEvent } from "../obs/simulatedChat";
 import { createLocalEditGrant, revokeLocalEditGrant } from "../obs/captureContracts";
 import { bindGlobalHotkey } from "../obs/globalHotkey";
 import {
@@ -294,6 +295,18 @@ export function CaptureView({ deviceId, chatEnabled, vodEnabled }: CaptureViewPr
             ? "Chat replay is on. A local request to 127.0.0.1:4736 can save one replay. Twitch chat is not read here."
             : "Chat replay is off. Turn on desktopChatReplay in flags.json before the Tippy bot may ask this PC to save."}
         </p>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => {
+            const signal = simulateChatEvent();
+            const result = app.ingestChat(signal, chatEnabled);
+            setStatus(app.status());
+            if (!result.accepted) setStatus(app.status());
+          }}
+        >
+          Simulate chat event
+        </button>
         <ul data-testid="capture-inventory">
           {inventory.map((item) => (
             <li key={item.idempotencyKey}>
@@ -425,8 +438,9 @@ async function sampleResources(
       processDetected: true,
       streaming: obs.streaming,
       recording: obs.recording,
-      droppedFrames: obs.droppedFrames,
-      laggedFrames: obs.laggedFrames,
+      droppedFrames: obs.encodingLagFrames,
+      laggedFrames: obs.renderLagFrames,
+      networkDroppedFrames: obs.networkDroppedFrames,
     });
   }
   const stepped = stepResourceMonitor(
@@ -446,8 +460,11 @@ async function sampleResources(
 }
 
 function resourceNoteFor(decision: ResourceDecision): string {
-  if (!decision.suspendProcessing) return `Processing can run. Policy ${decision.policy}.`;
-  return `Processing is suspended (${decision.reasons.join(", ")}). Policy ${decision.policy}.`;
+  const network = decision.networkCondition === "network_drops"
+    ? " Network drops are logged and do not suspend processing."
+    : "";
+  if (!decision.suspendProcessing) return `Processing can run. Policy ${decision.policy}.${network}`;
+  return `Processing is suspended (${decision.reasons.join(", ")}). Policy ${decision.policy}.${network}`;
 }
 
 async function readHost(): Promise<HostReading> {

@@ -180,6 +180,9 @@ export class TippyApp {
     recording: boolean
     droppedFrames: number | null
     laggedFrames: number | null
+    renderLagFrames: number | null
+    encodingLagFrames: number | null
+    networkDroppedFrames: number | null
   }> {
     const outputs = await this.session.readOutputActivity()
     const stats = await this.session.readStats()
@@ -187,8 +190,11 @@ export class TippyApp {
       processDetected: true,
       streaming: outputs.streaming,
       recording: outputs.recording,
-      droppedFrames: stats.droppedFrames,
-      laggedFrames: stats.laggedFrames,
+      droppedFrames: stats.encodingLagFrames,
+      laggedFrames: stats.renderLagFrames,
+      renderLagFrames: stats.renderLagFrames,
+      encodingLagFrames: stats.encodingLagFrames,
+      networkDroppedFrames: outputs.networkDroppedFrames,
     }
   }
 
@@ -198,6 +204,9 @@ export class TippyApp {
     recording: boolean
     droppedFrames: number | null
     laggedFrames: number | null
+    renderLagFrames: number | null
+    encodingLagFrames: number | null
+    networkDroppedFrames: number | null
     obsCpuPercent: number | null
     obsMemoryMb: number | null
     activeFps: number | null
@@ -210,8 +219,11 @@ export class TippyApp {
       processDetected: true,
       streaming: outputs.streaming,
       recording: outputs.recording,
-      droppedFrames: stats.droppedFrames,
-      laggedFrames: stats.laggedFrames,
+      droppedFrames: stats.encodingLagFrames,
+      laggedFrames: stats.renderLagFrames,
+      renderLagFrames: stats.renderLagFrames,
+      encodingLagFrames: stats.encodingLagFrames,
+      networkDroppedFrames: outputs.networkDroppedFrames,
       obsCpuPercent: stats.obsCpuPercent,
       obsMemoryMb: stats.obsMemoryMb,
       activeFps: stats.activeFps,

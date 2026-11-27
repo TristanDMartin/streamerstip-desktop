@@ -15,12 +15,12 @@ cargo +1.91.0 test --locked --manifest-path src-tauri/Cargo.toml --lib
 `npm test` (Vitest 3.2.7) exited 0:
 
 ```
-Test Files  15 passed (15)
-     Tests  56 passed (56)
-  Duration  3.27s
+Test Files  16 passed (16)
+     Tests  58 passed (58)
+  Duration  3.26s
 ```
 
-That includes the existing shell tests (Home, Tippy rail, team, format) and the OBS tests: auth failure, replay off, save, duplicate save, disconnect mid-save, adopt after disconnect, two device ids, audio threshold, chat flag, pre-stream check, reconnect after a dropped socket, no retry after a bad password, the global-shortcut binder, the keychain vault contract, the Path B grant, the VOD stub, the Capture screen render, `tippy.scheduler.v1`, `GetStats` skipped frames, `tippy.clip-contract.v1`, resource-monitor suspend/resume, and the vendored `tippy.contract-fixtures.v1` suite (26 cases, checksum ok). The same runner is `node --experimental-strip-types contracts/runner/run-fixtures.ts`: 26 pass, 0 fail. A path B or C send without an unrevoked `local_edit` grant fails. The known path B grant hash is `8f9d0827de17845bcf7cda0ef3ed65ed2f62b688870d8f2748178de0dc13cda1`.
+That includes the existing shell tests (Home, Tippy rail, team, format) and the OBS tests: auth failure, replay off, save, duplicate save, disconnect mid-save, adopt after disconnect, two device ids, audio threshold, chat flag, pre-stream check, reconnect after a dropped socket, no retry after a bad password, the global-shortcut binder, the keychain vault contract, the Path B grant, the VOD stub, the Capture screen render, `tippy.scheduler.v1`, `GetStats` skipped frames, `tippy.clip-contract.v1`, resource-monitor suspend/resume, and the vendored `tippy.contract-fixtures.v1` suite (26 cases, checksum ok), separate render-lag, encoding-lag, and network-drop counters, and the simulated chat harness. The same runner is `node --experimental-strip-types contracts/runner/run-fixtures.ts`: 26 pass, 0 fail. A path B or C send without an unrevoked `local_edit` grant fails. The known path B grant hash is `8f9d0827de17845bcf7cda0ef3ed65ed2f62b688870d8f2748178de0dc13cda1`.
 
 ```
 rustc --edition 2021 --test src-tauri/src/http_framing.rs
@@ -61,7 +61,8 @@ That run includes `sidecar.rs`, the empty-secret keychain test, the global-short
 | Path B handoff to tippy-media | PASS as a local grant. The pipeline was not called |
 | VOD sidecar plan | PASS for argv, cancel, and the flag. The Node process was not spawned |
 | Processing mode | PASS for `tippy.scheduler.v1`. Streaming, recording, dropped frames, or lagged frames force Live. OBS open and idle drops Performance to Balanced. A real GPU was not measured |
-| Resource monitor | PASS for suspend, hysteresis, and resume in Vitest, and for the host parsers in `cargo test`. A live OBS workload was not measured |
+| Resource monitor | PASS for suspend, hysteresis, resume, and for network drops staying out of the suspend reasons in Vitest, and for the host parsers in `cargo test`. A live OBS workload was not measured |
+| Simulated chat harness | PASS. `simulateChatEvent` saves once with the flag on and does not name Twitch. Live Twitch was not used |
 | Clip contract | PASS. Path A cannot enter editing. Paths B and C stay out of the inbox while `tippy_creator_inbox_enabled` is off |
 | OBS stream and record status | PASS against a mock, including `GetStats` skipped frames. A real OBS output was not read |
 | VOD intelligence screen | PASS as a flagged UI. The scanner and pipeline were not executed |
@@ -104,8 +105,9 @@ Turn the flag off when the four runs are done. Do not upload the recordings.
 
 | Measure | Off | Live | Balanced | Performance |
 | --- | --- | --- | --- | --- |
-| Dropped frames (output skipped, delta) | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
-| Render lag (render skipped, delta) | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
+| Encoding lag (`GetStats.outputSkippedFrames`, delta) | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
+| Render lag (`GetStats.renderSkippedFrames`, delta) | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
+| Network-dropped frames (`GetStreamStatus.outputSkippedFrames`, delta) | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
 | Encoding overload (OBS log and encoder %) | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
 | Audio buffering lines in the OBS log | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
 | Recording failures | BLOCKED | BLOCKED | BLOCKED | BLOCKED |

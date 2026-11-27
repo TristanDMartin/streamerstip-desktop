@@ -111,12 +111,39 @@ OBS being open is not treated as free CPU, RAM, GPU, or encoder time. Every 5 se
 | Free VRAM | under 2048 MB | at least 3072 MB |
 | Encoder utilization | 70% | 40% |
 | Encoder sessions | 1 or more | 0 |
-| Skipped or lagged frames | any new frame since the last sample | no new frames |
+| Render lag (`GetStats.renderSkippedFrames`) | any new frame since the last sample | no new frames |
+| Encoding lag (`GetStats.outputSkippedFrames`) | any new frame since the last sample | no new frames |
+| Network-dropped frames (`GetStreamStatus.outputSkippedFrames`) | never suspends | ignored |
 | Average frame render time | 16.7 ms | 12 ms |
 | Output congestion | 0.2 | 0.05 |
 | Active FPS while streaming or recording | under 45 | at least 55 |
 
-Decisions are one JSON object per line, policy `tippy.resource-monitor.v1`. The desktop writes `%APPDATA%\com.streamerstip.desktop\logs\resource-monitor.jsonl`. The page also keeps the last 200 lines in local storage under `tippy.resourceLog`. Save moment still works while processing is suspended.
+Decisions are one JSON object per line, policy `tippy.resource-monitor.v1`. Each line has `renderLagFrames`, `encodingLagFrames`, and `networkDroppedFrames` as separate numbers. A rise in network-dropped frames sets `networkCondition` to `network_drops` and does not suspend processing. Render lag and encoding lag can suspend. The desktop writes `%APPDATA%\com.streamerstip.desktop\logs\resource-monitor.jsonl`. The page also keeps the last 200 lines in local storage under `tippy.resourceLog`. Save moment still works while processing is suspended.
+
+`GetStats.renderSkippedFrames` is frames missed because rendering lagged. `GetStats.outputSkippedFrames` is frames skipped because the encoder lagged. OBS does not put network drops on `GetStats`. Those are `GetStreamStatus.outputSkippedFrames` (`obs_output_get_frames_dropped`). The monitor stores that third counter on its own and does not treat it as CPU or GPU overload.
+
+## Streaming PC checklist (RTX 3060)
+
+This is the validation script for the streaming PC. The GPU for this script is an RTX 3060. Do not run it on the gaming PC. Every result stays `BLOCKED` until Tristan writes what the PC actually did. A mock, this agent, and CI do not fill these cells. No live Twitch. No uploads. Leave `desktopVodIntelligence` off except where a step says to turn it on, then turn it off again.
+
+Record the commit, OBS version, `nvidia-smi` driver, and the three frame counters from the latest `resource-monitor.jsonl` line.
+
+| Step | Do this | Result |
+| --- | --- | --- |
+| Install and launch | Install the versions above. `npm ci`, `npm test`, `cargo test --locked --manifest-path src-tauri/Cargo.toml --lib`, `npm run build`, `cargo build --locked --manifest-path src-tauri/Cargo.toml`, then `npm run tauri dev`. Tippy Desktop opens. | BLOCKED |
+| OBS WebSocket connect | In OBS, enable the WebSocket server on `127.0.0.1:4455`. In Capture, connect to that host and port. The status line names the OBS version. | BLOCKED |
+| Auth | Use the OBS WebSocket password. A wrong password stays disconnected and does not retry. The correct password connects. The password is not shown in the status line. | BLOCKED |
+| Replay buffer status | Start the replay buffer in OBS. The pre-stream check lists the buffer as ready. Stop it and confirm the check says it is off, then start it again before the next step. | BLOCKED |
+| Manual replay capture | With no chat, click Save moment. A local file path appears and the size is greater than 0. Leave “I authorize local editing of this save” unchecked for this step. | BLOCKED |
+| Audio trigger | Calibrate 3 seconds, then turn on the audio spike. One loud moment saves once. A quiet stretch does not save again. | BLOCKED |
+| Chat trigger, simulated first | Turn `desktopChatReplay` on in `flags.json` and restart. Click Simulate chat event. One local save uses trigger `chat`. Click it again and it does not save a second file. Do not connect Twitch and do not POST to Twitch. Turn the flag off when finished. | BLOCKED |
+| Local clip inventory | The saved rows stay on this PC. The upload checkbox stays unchecked. Nothing is sent to Mux. | BLOCKED |
+| Live / Balanced / Performance | With OBS streaming or recording, Live is the effective mode. With OBS open and idle, Performance steps down to Balanced. With OBS closed, Performance can stay Performance. Read the mode line in Capture. | BLOCKED |
+| Resource-pressure detection | While streaming, open `resource-monitor.jsonl`. Confirm `renderLagFrames`, `encodingLagFrames`, and `networkDroppedFrames` are three fields. Note the RTX 3060 driver from `nvidia-smi`. | BLOCKED |
+| Suspend | Raise render lag or encoding lag (or cross a CPU, GPU, VRAM, or encoder line). The next line says processing is suspended. Save moment still saves. Scan and edit do not start. | BLOCKED |
+| Recover | Hold the resume lines, including no new render-lag or encoding-lag frames, for 10 seconds. The line says processing can run. A network-drop increase by itself does not suspend and sets `networkCondition` to `network_drops`. | BLOCKED |
+| Disconnect / reconnect | Stop the OBS WebSocket server, then start it with the same password. Capture reconnects without a second SaveReplayBuffer. A disconnect during Save moment is marked ambiguous and is not retried as a new save. | BLOCKED |
+| Authorization revocation | Check “I authorize local editing of this replay”, then uncheck it. The grant’s `revokedAt` is set. Sending that replay to editing is refused. Path A and an unchecked row stay refused. | BLOCKED |
 
 ## Device runs
 

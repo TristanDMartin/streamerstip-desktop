@@ -130,6 +130,8 @@ export class ObsSession {
     diskFreeMb: number | null
     droppedFrames: number | null
     laggedFrames: number | null
+    renderLagFrames: number | null
+    encodingLagFrames: number | null
     obsCpuPercent: number | null
     obsMemoryMb: number | null
     activeFps: number | null
@@ -141,6 +143,8 @@ export class ObsSession {
         diskFreeMb: null,
         droppedFrames: null,
         laggedFrames: null,
+        renderLagFrames: null,
+        encodingLagFrames: null,
         obsCpuPercent: null,
         obsMemoryMb: null,
         activeFps: null,
@@ -152,6 +156,8 @@ export class ObsSession {
       diskFreeMb: finiteNumber(record.availableDiskSpace),
       droppedFrames: finiteNumber(record.outputSkippedFrames),
       laggedFrames: finiteNumber(record.renderSkippedFrames),
+      renderLagFrames: finiteNumber(record.renderSkippedFrames),
+      encodingLagFrames: finiteNumber(record.outputSkippedFrames),
       obsCpuPercent: finiteNumber(record.cpuUsage),
       obsMemoryMb: finiteNumber(record.memoryUsage),
       activeFps: finiteNumber(record.activeFps),
@@ -187,7 +193,12 @@ export class ObsSession {
     await this.call('StartReplayBuffer', consent, false)
   }
 
-  async readOutputActivity(): Promise<{ streaming: boolean; recording: boolean; outputCongestion: number | null }> {
+  async readOutputActivity(): Promise<{
+    streaming: boolean
+    recording: boolean
+    outputCongestion: number | null
+    networkDroppedFrames: number | null
+  }> {
     const stream = await this.call('GetStreamStatus', null, false)
     const record = await this.call('GetRecordStatus', null, false)
     const streamRecord = stream && typeof stream === 'object' ? stream as unknown as Record<string, unknown> : {}
@@ -195,6 +206,7 @@ export class ObsSession {
       streaming: outputActive(stream),
       recording: outputActive(record),
       outputCongestion: finiteNumber(streamRecord.outputCongestion),
+      networkDroppedFrames: finiteNumber(streamRecord.outputSkippedFrames),
     }
   }
 

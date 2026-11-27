@@ -55,6 +55,13 @@ test('tippy.scheduler.v1 drops to live for output, drops, or lag', () => {
   })
   assert.equal(lagged.effectiveMode, 'live')
   assert.equal(lagged.reasons.includes('frame_drops'), true)
+  const networkOnly = decideDesktopProcessing({
+    requestedMode: 'performance',
+    obs: { ...IDLE, networkDroppedFrames: 40 },
+    gpu: { cudaAvailable: true, nvencAvailable: true, vramTotalMb: 12288, vramUsedMb: 1000, encoderSessions: 0 },
+  })
+  assert.equal(networkOnly.effectiveMode, 'performance')
+  assert.equal(networkOnly.reasons.includes('frame_drops'), false)
   const open = decideDesktopProcessing({
     requestedMode: 'performance',
     obs: { ...IDLE, processDetected: true },

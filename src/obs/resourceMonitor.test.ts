@@ -16,6 +16,9 @@ const PATHS = {
 }
 
 function sample(overrides: Partial<ResourceSample> = {}): ResourceSample {
+  const encodingLagFrames = overrides.encodingLagFrames ?? overrides.droppedFrames ?? 4
+  const renderLagFrames = overrides.renderLagFrames ?? overrides.laggedFrames ?? 1
+  const networkDroppedFrames = overrides.networkDroppedFrames ?? 0
   return {
     atMs: 0,
     cpuPercent: 20,
@@ -26,8 +29,6 @@ function sample(overrides: Partial<ResourceSample> = {}): ResourceSample {
     vramUsedMb: 1024,
     encoderUtilPercent: 5,
     encoderSessions: 0,
-    droppedFrames: 4,
-    laggedFrames: 1,
     averageFrameRenderTimeMs: 8,
     outputCongestion: 0,
     activeFps: 60,
@@ -35,6 +36,11 @@ function sample(overrides: Partial<ResourceSample> = {}): ResourceSample {
     recording: false,
     obsProcessDetected: true,
     ...overrides,
+    droppedFrames: overrides.droppedFrames ?? encodingLagFrames,
+    laggedFrames: overrides.laggedFrames ?? renderLagFrames,
+    renderLagFrames,
+    encodingLagFrames,
+    networkDroppedFrames,
   }
 }
 
@@ -61,7 +67,8 @@ test('a crossed threshold suspends immediately and a gap inside the band does no
     obsProcessDetected: true,
   }))
   assert.equal(dropped.decision.phase, 'suspended')
-  assert.equal(dropped.decision.reasons.includes('frame_drops'), true)
+  assert.equal(dropped.decision.reasons.includes('encoding_lag'), true)
+  assert.equal(dropped.decision.networkCondition, null)
   const inside = stepResourceMonitor(held.state, sample({
     atMs: RESOURCE_COOLDOWN_MS + 500,
     droppedFrames: 4,
@@ -134,6 +141,31 @@ test('an open OBS process is not treated as free capacity', () => {
   }))
   assert.equal(closedAndHot.decision.phase, 'suspended')
   assert.equal(closedAndHot.decision.reasons.includes('cpu'), true)
+})
+
+test('network drops are logged and do not suspend processing', () => {
+  const calm = stepResourceMonitor(initialResourceState(), sample({ atMs: 0, networkDroppedFrames: 2 }))
+  const running = stepResourceMonitor(calm.state, sample({ atMs: RESOURCE_COOLDOWN_MS, networkDroppedFrames: 2 }))
+  assert.equal(running.decision.phase, 'running')
+  const networkOnly = stepResourceMonitor(running.state, sample({
+    atMs: RESOURCE_COOLDOWN_MS + 1000,
+    networkDroppedFrames: 9,
+  }))
+  assert.equal(networkOnly.decision.phase, 'running')
+  assert.equal(networkOnly.decision.suspendProcessing, false)
+  assert.equal(networkOnly.decision.networkCondition, 'network_drops')
+  assert.equal(networkOnly.decision.reasons.includes('encoding_lag'), false)
+  assert.equal(networkOnly.decision.reasons.includes('render_lag'), false)
+  assert.equal(networkOnly.decision.networkDroppedFrames, 9)
+  assert.equal(networkOnly.logLine.includes('network_drops'), true)
+  const render = stepResourceMonitor(networkOnly.state, sample({
+    atMs: RESOURCE_COOLDOWN_MS + 2000,
+    networkDroppedFrames: 9,
+    renderLagFrames: 3,
+  }))
+  assert.equal(render.decision.phase, 'suspended')
+  assert.equal(render.decision.reasons.includes('render_lag'), true)
+  assert.equal(render.decision.networkCondition, null)
 })
 
 test('a missing host reading suspends, and the log stays local', () => {
